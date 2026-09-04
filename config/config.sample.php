@@ -18,4 +18,11 @@ return [
         'key'      => '',             // สุ่มอัตโนมัติตอนติดตั้ง
         'installed_at' => null,
     ],
+    // การเชื่อมต่อ SSO ผ่านระบบ ONE-RVC — ค่าที่ลงทะเบียนไว้กับ workspace.rvc.ac.th ห้ามแก้
+    'sso' => [
+        'authorize_endpoint' => 'http://workspace.rvc.ac.th/oa/index.php',
+        'verify_endpoint'    => 'http://workspace.rvc.ac.th/oa/api/verify_token.php',
+        'client_id'          => 'cl_e433b702f6',
+        'redirect_uri'       => 'https://safe.rvc.ac.th/web/api/callback.php',
+    ],
 ];

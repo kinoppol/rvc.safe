@@ -28,6 +28,18 @@ if ($r === 'login') {
     exit;
 }
 
+if ($r === 'sso_login') {
+    if (Auth::check()) { redirect('index.php?r=dashboard'); }
+    if (!Sso::enabled()) {
+        flash('ยังไม่ได้ตั้งค่าระบบเข้าสู่ระบบผ่าน ONE-RVC', 'err');
+        redirect('index.php?r=login');
+    }
+    $state = bin2hex(random_bytes(16));
+    $_SESSION['sso_state'] = $state;
+    $_SESSION['sso_state_at'] = time();
+    redirect(Sso::authorizeUrl($state));
+}
+
 if ($r === 'logout') {
     if (Auth::isImpersonating()) {
         // กำลังสวมสิทธิ์อยู่ → "ออกจากระบบ" หมายถึงคืนสิทธิ์ผู้ดูแลเดิม ไม่ใช่ปิด session

@@ -34,6 +34,16 @@ final class Auth
         return true;
     }
 
+    /** ตั้ง session จากแถวผู้ใช้ที่ยืนยันตัวตนแล้วโดยไม่ต้องใช้รหัสผ่าน (เช่น ผ่าน SSO) */
+    public static function loginAs(array $u): void
+    {
+        session_regenerate_id(true);
+        unset($_SESSION['impersonator']);
+        $_SESSION['uid']  = (int)$u['id'];
+        $_SESSION['role'] = $u['role'];
+        $_SESSION['name'] = $u['full_name'];
+    }
+
     public static function logout(): void
     {
         $_SESSION = [];

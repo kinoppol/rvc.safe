@@ -53,6 +53,22 @@ ALTER TABLE visits   ADD INDEX  IF NOT EXISTS idx_visits_created (created_at);
 จากนั้นเข้าเมนู Migration แล้วกด "รัน migration ที่ค้าง"
 (ตัว Migrator ยังข้ามข้อผิดพลาดประเภท "มีอยู่แล้ว" อัตโนมัติเพื่อความปลอดภัยบน MariaDB รุ่นเก่า)
 
+## เข้าสู่ระบบผ่าน ONE-RVC (SSO)
+
+หน้าล็อกอินมีปุ่ม **"ลงชื่อเข้าใช้ผ่านระบบ ONE-RVC"** ควบคู่กับการล็อกอินด้วยบัญชีในระบบนี้เอง (ไว้ใช้กับบัญชี `admin`)
+
+**Flow**
+1. `index.php?r=sso_login` — สุ่ม `state` เก็บใน session แล้ว redirect ไปที่ authorize endpoint ของ ONE-RVC พร้อม `client_id`, `redirect_uri`, `state`
+2. ผู้ใช้ล็อกอินที่ ONE-RVC (รหัสผ่าน + OTP ถ้าเปิดใช้) แล้วถูก POST กลับมาที่ **`web/api/callback.php`** — URL คงที่ตรงกับ `redirect_uri` ที่ลงทะเบียนไว้ ห้ามย้ายไฟล์นี้
+3. `web/api/callback.php` ตรวจ `state` ให้ตรงกับที่เก็บไว้ (กัน CSRF) — ถ้าไม่ได้เก็บ state ไว้เลยและ POST มาไม่มี state ถือเป็น IdP-initiated login ที่ยอมรับได้ (ด่านความปลอดภัยหลักอยู่ที่ข้อ 4)
+4. เรียก `Sso::verifyToken()` → POST `token_id`/`token_key` ไปที่ verify endpoint ของ ONE-RVC **จากฝั่งเซิร์ฟเวอร์เท่านั้น** ไม่เชื่อค่าจาก client เด็ดขาด
+5. ได้ `{"valid":true}` → `Sso::findOrCreateUser()` จับคู่/สร้างบัญชีในตาราง `users` (ผูกด้วย `sso_user_id`, เชื่อมบัญชีเดิมด้วยอีเมลถ้ามี, บัญชีใหม่เริ่มเป็น `role=teacher` และไม่มีรหัสผ่านที่ใช้ล็อกอินตรงได้ — เข้าได้ทาง SSO เท่านั้น) แล้ว `Auth::loginAs()` สร้าง session ของระบบนี้เอง
+
+**การตั้งค่า** อยู่ใน `config/sso` (ผสานจาก `config/config.sample.php` เข้ากับ `config/config.php` อัตโนมัติ ไม่ต้องติดตั้งซ้ำ):
+`authorize_endpoint`, `verify_endpoint`, `client_id`, `redirect_uri` — ค่าที่ให้มาลงทะเบียนไว้ตายตัวแล้ว ห้ามแก้
+
+**เคสที่จัดการ:** ผู้ใช้กด "ไม่อนุญาต" (`GET ?error=...` → กลับหน้าล็อกอินอย่างสุภาพ), `state` ไม่ตรง (`400`), โทเคนหมดอายุ/ไม่ถูกต้อง (`401`), verify endpoint ล่มหรือ timeout (`401`, ไม่ค้างหน้าเว็บเกิน 10 วินาที) — ไม่มีจุดใดเขียน `token_id`/`token_key` ลง log
+
 ## โอนข้อมูลจากระบบ RMS (เฉพาะผู้ดูแล)
 
 `index.php?r=rms` — โอนเฉพาะชุดข้อมูลที่งานเยี่ยมบ้านโดยครูที่ปรึกษาต้องใช้
@@ -99,13 +115,16 @@ src/
   Migrator.php           ตัวจัดการ migration
   Auth.php               การยืนยันตัวตน + สิทธิ์ตามบทบาท
   Rms.php                โอนข้อมูลจากระบบ RMS (people / dateedu / studentgroup / student)
+  Sso.php                เข้าสู่ระบบผ่าน ONE-RVC (authorize URL, verify token, จับคู่/สร้างผู้ใช้)
   bootstrap.php / helpers.php
+web/api/callback.php     redirect_uri ของ ONE-RVC SSO (URL คงที่ ห้ามย้าย)
 migrations/
   0001_core_schema.sql   ตารางหลัก
   0002_visit_indexes.sql ดัชนี
   0003_departments.sql   แผนกวิชา + ค่าตั้งต้น
   0004_guardian_contact.sql   (ตัวอย่าง) ข้อมูลติดต่อผู้ปกครอง
   0005_rms_integration.sql    ตาราง/คอลัมน์สำหรับเชื่อม RMS
+  0006_sso_onerdc.sql         คอลัมน์ sso_user_id สำหรับเชื่อม ONE-RVC
 views/                   เทมเพลต (layout + หน้าแต่ละหน้า)
 assets/app.css           สไตล์ (โทนสีจากแบบต้นฉบับ Claude Design, รองรับ light/dark)
 storage/uploads|logs     ต้องเขียนได้

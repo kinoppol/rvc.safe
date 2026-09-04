@@ -18,6 +18,7 @@ require BASE_PATH . '/src/Migrator.php';
 require BASE_PATH . '/src/Auth.php';
 require BASE_PATH . '/src/helpers.php';
 require BASE_PATH . '/src/Rms.php';
+require BASE_PATH . '/src/Sso.php';
 
 function app_config(): array
 {
@@ -27,7 +28,10 @@ function app_config(): array
             header('Location: install.php');
             exit;
         }
-        $cfg = require CONFIG_FILE;
+        $installed = require CONFIG_FILE;
+        $sample    = require BASE_PATH . '/config/config.sample.php';
+        // เติมค่าตั้งต้นที่ขาด (เช่น ฟีเจอร์ใหม่อย่าง sso) ให้ config เดิม โดยไม่ทับค่าที่ตั้งไว้แล้ว
+        $cfg = array_replace_recursive($sample, $installed);
     }
     return $cfg;
 }
