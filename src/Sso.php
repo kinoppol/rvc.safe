@@ -42,6 +42,9 @@ final class Sso
      */
     public static function verifyToken(string $tokenId, string $tokenKey): array
     {
+        if (!function_exists('curl_init')) {
+            throw new RuntimeException('เซิร์ฟเวอร์นี้ไม่มีส่วนขยาย PHP curl ซึ่งจำเป็นสำหรับการยืนยันตัวตนผ่าน ONE-RVC');
+        }
         $c = self::config();
         $endpoint = $c['verify_endpoint'] ?? '';
         if ($endpoint === '') {

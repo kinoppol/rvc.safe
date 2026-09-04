@@ -152,6 +152,7 @@ final class Rms
      */
     private static function downloadAvatar(string $picName, int $userId): ?string
     {
+        if (!function_exists('curl_init')) { return null; } // ไม่มีส่วนขยาย curl — ข้ามรูปโปรไฟล์ ไม่ทำให้ sync ทั้งชุดล้มเหลว
         $base = self::baseUrl();
         if ($base === '') { return null; }
         $url = $base . '/files/' . ltrim($picName, '/');
