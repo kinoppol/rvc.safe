@@ -499,7 +499,12 @@ if ($r === 'rms') {
     $action = $_POST['action'] ?? '';
 
     if ($action !== '') {
-        csrf_verify();
+        // endpoint นี้ตอบกลับเป็น JSON เสมอ (เรียกผ่าน fetch) — ตรวจ CSRF เองแทน csrf_verify()
+        // ที่ exit เป็นข้อความล้วน เพื่อให้ฝั่ง JS แสดงข้อความที่ชัดเจนเมื่อ session หมดอายุ
+        $postedCsrf = $_POST['_csrf'] ?? '';
+        if (!is_string($postedCsrf) || !hash_equals(csrf_token(), $postedCsrf)) {
+            json_err('เซสชันหมดอายุหรือหน้าเว็บค้างไว้นานเกินไป กรุณารีเฟรชหน้านี้แล้วลองใหม่', 419);
+        }
         try {
             switch ($action) {
                 case 'save_url':

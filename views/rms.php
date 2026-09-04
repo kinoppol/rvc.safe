@@ -99,10 +99,19 @@ function B(label, n){ if(n===undefined||n===null) return ''; return `<span class
 
 async function post(action, extra){
   const body = new URLSearchParams({ action, _csrf: window.RVC_CSRF, ...(extra||{}) });
-  const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+  let res;
+  try {
+    res = await fetch(API, { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+  } catch (e) {
+    return { success:false, message:'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ (เครือข่ายขัดข้อง หรือถูกบล็อก): ' + e.message };
+  }
   const txt = await res.text();
   try { return JSON.parse(txt); }
-  catch(e){ return { success:false, message:'การตอบกลับไม่ถูกต้อง ('+res.status+')' }; }
+  catch(e){
+    return { success:false, message: res.status === 419
+      ? 'เซสชันหมดอายุ กรุณารีเฟรชหน้านี้แล้วลองใหม่ (กด F5)'
+      : 'การตอบกลับจากเซิร์ฟเวอร์ไม่ถูกต้อง (HTTP ' + res.status + ')' };
+  }
 }
 
 /* ---------- ตัวควบคุมภาพเคลื่อนไหว ---------- */
