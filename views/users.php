@@ -1,7 +1,48 @@
-<?php /** @var array $users */ $me = Auth::user(); ?>
+<?php
+/** @var array $users @var string $q @var string $roleF @var string $status @var int $totalUsers */
+$me = Auth::user();
+$hasFilter = $q !== '' || $roleF !== '' || $status !== '';
+$hiddenFilters = fn() =>
+    '<input type="hidden" name="q" value="' . e($q) . '">'
+  . '<input type="hidden" name="role" value="' . e($roleF) . '">'
+  . '<input type="hidden" name="status" value="' . e($status) . '">';
+?>
+<section class="card pad" style="display:flex;flex-direction:column;gap:10px">
+  <form method="get" action="index.php" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+    <input type="hidden" name="r" value="users">
+    <label class="field" style="flex:1;min-width:200px">
+      <span class="lbl">ค้นหา</span>
+      <input type="text" name="q" value="<?= e($q) ?>" placeholder="ชื่อ, ชื่อผู้ใช้, อีเมล หรือแผนก">
+    </label>
+    <label class="field" style="min-width:170px">
+      <span class="lbl">บทบาท</span>
+      <select name="role">
+        <option value="">ทุกบทบาท</option>
+        <?php foreach (Auth::ROLES as $rk => $rl): ?>
+          <option value="<?= e($rk) ?>" <?= $roleF === $rk ? 'selected' : '' ?>><?= e($rl) ?></option>
+        <?php endforeach; ?>
+      </select>
+    </label>
+    <label class="field" style="min-width:150px">
+      <span class="lbl">สถานะ</span>
+      <select name="status">
+        <option value="">ทุกสถานะ</option>
+        <option value="active" <?= $status === 'active' ? 'selected' : '' ?>>ใช้งานอยู่</option>
+        <option value="inactive" <?= $status === 'inactive' ? 'selected' : '' ?>>ปิดใช้งาน</option>
+      </select>
+    </label>
+    <button class="btn" type="submit">ค้นหา</button>
+    <?php if ($hasFilter): ?>
+      <a class="btn sec" href="index.php?r=users">ล้างตัวกรอง</a>
+    <?php endif; ?>
+  </form>
+</section>
+
 <section class="card">
   <div style="padding:16px 18px;border-bottom:1px solid var(--border)">
-    <strong style="font-size:14.5px">ผู้ใช้ระบบทั้งหมด (<?= count($users) ?>)</strong><br>
+    <strong style="font-size:14.5px">
+      <?= $hasFilter ? 'พบ ' . count($users) . ' จากทั้งหมด ' . $totalUsers . ' คน' : 'ผู้ใช้ระบบทั้งหมด (' . $totalUsers . ')' ?>
+    </strong><br>
     <span class="muted" style="font-size:11.5px">ผู้ดูแลสามารถ "สวมสิทธิ์" เพื่อดูระบบในมุมมองของผู้ใช้คนนั้น — ออกจากระบบเพื่อกลับสู่สิทธิ์ผู้ดูแลได้ทุกเมื่อ</span>
   </div>
   <div class="tablewrap">
@@ -28,7 +69,7 @@
             <td style="text-align:right;white-space:nowrap">
               <?php if ((int)$u['id'] !== (int)$me['id']): ?>
                 <form method="post" action="index.php?r=users" style="display:inline">
-                  <?= csrf_field() ?>
+                  <?= csrf_field() ?><?= $hiddenFilters() ?>
                   <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
                   <button class="btn sec sm" name="action" value="toggle_active"
                     onclick="return confirm('<?= $u['is_active'] ? 'ปิดใช้งานผู้ใช้นี้?' : 'เปิดใช้งานผู้ใช้นี้?' ?>')">
@@ -37,7 +78,7 @@
                 </form>
                 <?php if ($u['is_active']): ?>
                   <form method="post" action="index.php?r=users" style="display:inline">
-                    <?= csrf_field() ?>
+                    <?= csrf_field() ?><?= $hiddenFilters() ?>
                     <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
                     <button class="btn sm" name="action" value="impersonate"
                       onclick="return confirm('สวมสิทธิ์เป็น &quot;<?= e($u['full_name']) ?>&quot; ใช่หรือไม่?\nกด \'ออกจากระบบ\' เพื่อกลับมาเป็นผู้ดูแลภายหลัง')">
@@ -51,6 +92,9 @@
             </td>
           </tr>
         <?php endforeach; ?>
+        <?php if (!$users): ?>
+          <tr><td colspan="6" class="muted" style="text-align:center;padding:24px">ไม่พบผู้ใช้ที่ตรงกับตัวกรอง</td></tr>
+        <?php endif; ?>
       </tbody>
     </table>
   </div>

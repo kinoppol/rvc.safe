@@ -241,6 +241,14 @@ if ($r === 'migrations') {
 if ($r === 'users') {
     Auth::requireRole('admin');
 
+    // ตัวกรอง/ค้นหา — เก็บผ่าน query string เพื่อรักษาบริบทได้แม้ทำรายการ (impersonate/เปิด-ปิดใช้งาน) แล้วย้อนกลับมา
+    $filterQs = http_build_query(array_filter([
+        'q'      => trim((string)($_POST['q'] ?? $_GET['q'] ?? '')),
+        'role'   => (string)($_POST['role'] ?? $_GET['role'] ?? ''),
+        'status' => (string)($_POST['status'] ?? $_GET['status'] ?? ''),
+    ], fn($v) => $v !== ''));
+    $backUrl = 'index.php?r=users' . ($filterQs !== '' ? '&' . $filterQs : '');
+
     if ($method === 'POST') {
         csrf_verify();
         $action = $_POST['action'] ?? '';
@@ -249,7 +257,7 @@ if ($r === 'users') {
             $targetId = (int)($_POST['id'] ?? 0);
             if ($targetId === (int)$me['id']) {
                 flash('ไม่สามารถสวมสิทธิ์บัญชีของตัวเองได้', 'err');
-                redirect('index.php?r=users');
+                redirect($backUrl);
             }
             $adminName = $me['full_name'];
             $st = $pdo->prepare('SELECT full_name FROM users WHERE id = ?');
@@ -261,7 +269,7 @@ if ($r === 'users') {
                 redirect('index.php?r=dashboard');
             }
             flash('ไม่สามารถสวมสิทธิ์ผู้ใช้นี้ได้ (อาจถูกปิดใช้งาน หรือไม่พบผู้ใช้)', 'err');
-            redirect('index.php?r=users');
+            redirect($backUrl);
         }
 
         if ($action === 'toggle_active') {
@@ -270,16 +278,38 @@ if ($r === 'users') {
                 $pdo->prepare('UPDATE users SET is_active = 1 - is_active WHERE id = ?')->execute([$targetId]);
                 activity_log($pdo, 'เปลี่ยนสถานะการใช้งานผู้ใช้ #' . $targetId);
             }
-            redirect('index.php?r=users');
+            redirect($backUrl);
         }
 
-        redirect('index.php?r=users');
+        redirect($backUrl);
     }
 
-    $users = $pdo->query(
-        "SELECT * FROM users ORDER BY FIELD(role,'admin','head','exec','teacher'), full_name"
-    )->fetchAll();
-    render('users', compact('users'), 'ผู้ใช้ระบบ');
+    $q      = trim((string)($_GET['q'] ?? ''));
+    $roleF  = (string)($_GET['role'] ?? '');
+    $status = (string)($_GET['status'] ?? '');
+
+    $where = [];
+    $args  = [];
+    if ($q !== '') {
+        $where[] = '(full_name LIKE ? OR username LIKE ? OR email LIKE ? OR department LIKE ?)';
+        $like = '%' . $q . '%';
+        array_push($args, $like, $like, $like, $like);
+    }
+    if ($roleF !== '' && isset(Auth::ROLES[$roleF])) {
+        $where[] = 'role = ?';
+        $args[] = $roleF;
+    }
+    if ($status === 'active') { $where[] = 'is_active = 1'; }
+    elseif ($status === 'inactive') { $where[] = 'is_active = 0'; }
+
+    $sql = 'SELECT * FROM users' . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+         . " ORDER BY FIELD(role,'admin','head','exec','teacher'), full_name";
+    $st = $pdo->prepare($sql);
+    $st->execute($args);
+    $users = $st->fetchAll();
+
+    $totalUsers = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
+    render('users', compact('users', 'q', 'roleF', 'status', 'totalUsers'), 'ผู้ใช้ระบบ');
     exit;
 }
 
