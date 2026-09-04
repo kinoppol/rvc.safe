@@ -278,8 +278,14 @@ final class Rms
         }
 
         $added = 0; $updated = 0; $skipped = 0;
+        $currentTerm = get_setting('current_term', '1/2569');
 
         $find = $pdo->prepare('SELECT id FROM students WHERE student_id = ? OR (student_id IS NULL AND code = ?) LIMIT 1');
+        // นักเรียนที่โอนเข้ามาใหม่ทุกคนได้รายการเยี่ยมบ้านตั้งต้น สถานะ "รอเยี่ยม" ทันที
+        $insVisit = $pdo->prepare(
+            "INSERT INTO visits (student_id, term, round, status, advisor, current_step, created_at)
+             VALUES (?, ?, 'ครั้งที่ 1', 'รอเยี่ยม', ?, 1, NOW())"
+        );
         $ins  = $pdo->prepare(
             'INSERT INTO students
                 (student_id, code, student_code, idcard, prefix, full_name, level, department, room,
@@ -334,6 +340,7 @@ final class Rms
             } else {
                 $ins->execute([$sid, $code, $code, self::nz($s['idcard'] ?? ''), $prefix, $name, $level ?: null, $major ?: null,
                     $room ?: null, $gcode ?: null, $gname ?: null, $adv ?: null, self::nz($phone), self::nz($email), $status, $gpax]);
+                $insVisit->execute([(int)$pdo->lastInsertId(), $currentTerm, $adv ?: null]);
                 $added++;
             }
         }
