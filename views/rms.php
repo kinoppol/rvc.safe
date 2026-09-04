@@ -79,6 +79,7 @@
 window.RVC_CSRF = '<?= e(csrf_token()) ?>';
 const API = 'index.php?r=rms';
 const COUNTS = <?= json_encode($counts) ?>;
+const resumeOffsets = {}; // จำจุดที่ค้างไว้ต่อชุดข้อมูล — กดโอนข้อมูลซ้ำแล้วทำต่อจากจุดเดิมแทนเริ่มใหม่
 
 const TRANSFERS = [
   { key:'people',    icon:'👥', title:'บุคลากร (ครูที่ปรึกษา / ผู้ใช้ระบบ)', action:'sync_people',
@@ -171,7 +172,7 @@ function render(){
 render();
 
 function el(key){ return document.querySelector(`[data-k="${key}"]`); }
-function setStatus(key, msg, cls){ const s = el(key).querySelector('.rms-status'); s.textContent = msg; s.style.color = cls==='err'?'var(--danger)':cls==='ok'?'var(--ok)':'var(--muted)'; }
+function setStatus(key, msg, cls){ const s = el(key).querySelector('.rms-status'); s.textContent = msg; s.style.color = cls==='err'?'var(--danger)':cls==='ok'?'var(--ok)':cls==='warn'?'var(--warn)':'var(--muted)'; }
 function setProgress(key, pct, show, live){ const p = el(key).querySelector('.progress'); p.style.display = show?'block':'none'; p.classList.toggle('live', !!live); p.querySelector('i').style.width = Math.max(0,Math.min(100,pct))+'%'; }
 function setBadges(key, html){ el(key).querySelector('.rms-badges').innerHTML = html; }
 function bumpHave(key, n){ el(key).querySelector('.rms-have').textContent = 'มีในระบบแล้ว ' + Number(n).toLocaleString() + ' รายการ'; }
@@ -203,11 +204,27 @@ async function runOne(key){
     if (!c.success){ setStatus(key, c.message, 'err'); vizStop('เกิดข้อผิดพลาด'); return false; }
     const total = c.data.total || 0;
     vizStart('กำลังนำเข้าข้อมูลนักเรียน…'); vizSetCount(0, total.toLocaleString());
-    let offset = 0, added = 0, updated = 0, skipped = 0, done = 0;
+    let offset = resumeOffsets[key] || 0, added = 0, updated = 0, skipped = 0, done = offset;
+    if (offset > 0) { setStatus(key, `ทำต่อจากรายการที่ ${offset.toLocaleString()}…`); }
     const row = t.row || 100;
+    const CHUNK_DELAY_MS = 350;   // หน่วงเวลาระหว่างท่อน กันโดน rate-limit ของ RMS/เครือข่าย
+    const MAX_RETRIES = 4;
+    const wait = (ms) => new Promise(res => setTimeout(res, ms));
+
     while (true){
-      const r = await post('sync_students', { offset, row });
-      if (!r.success){ setStatus(key, `หยุดที่ ${done.toLocaleString()} รายการ: ${r.message}`, 'err'); vizStop('หยุดกลางคัน'); return false; }
+      let r, attempt = 0;
+      while (true) {
+        r = await post('sync_students', { offset, row });
+        if (r.success || attempt >= MAX_RETRIES) break;
+        attempt++;
+        setStatus(key, `เจอปัญหาชั่วคราว (${r.message}) กำลังลองใหม่ครั้งที่ ${attempt}/${MAX_RETRIES}...`, 'warn');
+        await wait(1500 * attempt); // เพิ่มเวลารอขึ้นทุกครั้งที่ retry (exponential backoff)
+      }
+      if (!r.success){
+        resumeOffsets[key] = offset; // จำจุดที่ค้างไว้ กดโอนข้อมูลซ้ำแล้วทำต่อจากตรงนี้ได้เลย ไม่ต้องเริ่มใหม่
+        setStatus(key, `หยุดที่ ${done.toLocaleString()} รายการ: ${r.message} (ลองใหม่แล้ว ${MAX_RETRIES} ครั้งไม่สำเร็จ — อาจเกิดจากโหลดข้อมูลถี่เกินไป กด "โอนข้อมูล" ซ้ำเพื่อทำต่อจากจุดนี้)`, 'err');
+        vizStop('หยุดกลางคัน'); return false;
+      }
       added += r.data.added||0; updated += r.data.updated||0; skipped += r.data.skipped||0;
       done += r.data.fetched||0; offset += row;
       setProgress(key, total ? done/total*100 : 0, true, true);
@@ -216,7 +233,9 @@ async function runOne(key){
       vizPulse(); vizSetCount(done, total ? total.toLocaleString() : '');
       if ((r.data.fetched||0) < row) break;
       if (total && done >= total) break;
+      await wait(CHUNK_DELAY_MS);
     }
+    delete resumeOffsets[key];
     setProgress(key, 100, false);
     vizStop(`นำเข้าข้อมูลนักเรียนเสร็จสิ้น — รวม ${done.toLocaleString()} รายการ`);
     setStatus(key, `เสร็จสิ้น — รวม ${done.toLocaleString()} รายการ`, 'ok');

@@ -301,13 +301,22 @@ if ($r === 'visit') {
         redirect('index.php?r=visit&id=' . $id . '&step=' . $newStep . ($act === 'submit' ? '&sent=1' : ''));
     }
 
-    $photoKinds = $pdo->prepare("SELECT kind, id FROM visit_photos WHERE visit_id = ? AND kind IN ('home','family','teacher')");
-    $photoKinds->execute([$id]);
-    $photoKinds = $photoKinds->fetchAll(PDO::FETCH_KEY_PAIR);
+    // กันหน้าล่มทั้งหน้าถ้าโครงสร้างฐานข้อมูลยังไม่ทันอัปเดต (เช่น deploy โค้ดใหม่มาก่อนรัน migration ที่ค้าง)
+    try {
+        $photoKinds = $pdo->prepare("SELECT kind, id FROM visit_photos WHERE visit_id = ? AND kind IN ('home','family','teacher')");
+        $photoKinds->execute([$id]);
+        $photoKinds = $photoKinds->fetchAll(PDO::FETCH_KEY_PAIR);
 
-    $docs = $pdo->prepare("SELECT id, label, uploaded_at FROM visit_photos WHERE visit_id = ? AND kind = 'doc' ORDER BY uploaded_at DESC");
-    $docs->execute([$id]);
-    $docs = $docs->fetchAll();
+        $docs = $pdo->prepare("SELECT id, label, uploaded_at FROM visit_photos WHERE visit_id = ? AND kind = 'doc' ORDER BY uploaded_at DESC");
+        $docs->execute([$id]);
+        $docs = $docs->fetchAll();
+    } catch (Throwable $e) {
+        $photoKinds = [];
+        $docs = [];
+        if (Auth::is('admin')) {
+            flash('โครงสร้างฐานข้อมูลยังไม่เป็นปัจจุบัน — กรุณาไปที่เมนู "Migration ฐานข้อมูล" แล้วรัน migration ที่ค้าง (' . $e->getMessage() . ')', 'err');
+        }
+    }
 
     render('visit_form', compact('visit', 'steps', 'data', 'step', 'photoKinds', 'docs'), 'บันทึกการเยี่ยมบ้าน');
     exit;
