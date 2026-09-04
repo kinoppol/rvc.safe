@@ -85,6 +85,47 @@ function set_setting(string $key, string $value): void
         ->execute([$key, $value]);
 }
 
+/** ชนิดไฟล์ที่รับได้: MIME (ตรวจจริงด้วย finfo ไม่ใช่นามสกุลที่ผู้ใช้ตั้ง) => นามสกุลที่ใช้บันทึก */
+const RVC_IMAGE_MIMES = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+const RVC_DOC_MIMES = RVC_IMAGE_MIMES + ['application/pdf' => 'pdf'];
+
+/**
+ * บันทึกไฟล์แนบของรายการเยี่ยมบ้านหนึ่งไฟล์ลง storage/uploads/visits/{visitId}/ และบันทึกแถวใน visit_photos
+ *   - $label === null: ภาพ 3 ประเภทตายตัว (kind='home'/'family'/'teacher') — ไฟล์ใหม่แทนที่ไฟล์เดิมของ kind เดียวกัน
+ *   - $label !== null: เอกสารแนบทั่วไป (kind='doc') — แนบเพิ่มได้หลายไฟล์ ไม่ทับของเดิม
+ * คืนข้อความ error หรือ null เมื่อสำเร็จ (หรือไม่มีไฟล์ถูกเลือกเลย — ไม่ถือเป็น error)
+ */
+function save_visit_upload(PDO $pdo, int $visitId, string $kind, array $file, array $allowedMimes, int $maxBytes, ?string $label = null): ?string
+{
+    if (!isset($file['error']) || $file['error'] === UPLOAD_ERR_NO_FILE) { return null; }
+    if ($file['error'] !== UPLOAD_ERR_OK) { return 'อัปโหลดไฟล์ไม่สำเร็จ'; }
+    if (!is_uploaded_file($file['tmp_name'])) { return 'อัปโหลดไฟล์ไม่สำเร็จ'; }
+    if ($file['size'] > $maxBytes) { return 'ไฟล์ "' . ($label ?? $kind) . '" มีขนาดใหญ่เกินกำหนด'; }
+
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
+    if (!isset($allowedMimes[$mime])) { return 'ไฟล์ "' . ($label ?? $kind) . '" เป็นชนิดที่ไม่รองรับ'; }
+    $ext = $allowedMimes[$mime];
+
+    $dir = BASE_PATH . '/storage/uploads/visits/' . $visitId;
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) { return 'สร้างที่จัดเก็บไฟล์ไม่สำเร็จ'; }
+
+    if ($label === null) {
+        foreach (glob($dir . "/{$kind}.*") ?: [] as $stale) { @unlink($stale); }
+        $filename = "{$kind}.{$ext}";
+    } else {
+        $filename = $kind . '_' . bin2hex(random_bytes(6)) . '.' . $ext;
+    }
+    $rel = "storage/uploads/visits/{$visitId}/{$filename}";
+    if (!move_uploaded_file($file['tmp_name'], BASE_PATH . '/' . $rel)) { return 'บันทึกไฟล์ไม่สำเร็จ'; }
+
+    if ($label === null) {
+        $pdo->prepare('DELETE FROM visit_photos WHERE visit_id = ? AND kind = ?')->execute([$visitId, $kind]);
+    }
+    $pdo->prepare('INSERT INTO visit_photos (visit_id, kind, label, path, uploaded_at) VALUES (?,?,?,?,NOW())')
+        ->execute([$visitId, $kind, $label, $rel]);
+    return null;
+}
+
 function json_ok(array $data = [], string $message = ''): never
 {
     header('Content-Type: application/json; charset=utf-8');

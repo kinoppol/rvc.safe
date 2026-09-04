@@ -1,14 +1,9 @@
 <?php
-/** @var array $visit @var array $steps @var array $data @var int $step */
+/** @var array $visit @var array $steps @var array $data @var int $step @var array $photoKinds @var array $docs */
 $s = $steps[$step - 1];
 $val = fn($id) => $data[$id] ?? null;
 $lat = $visit['lat'] ?: $visit['s_lat'] ?: 16.0538;
 $lng = $visit['lng'] ?: $visit['s_lng'] ?: 103.6531;
-$photos = [
-    ['icon' => '🏠', 'label' => 'ภาพบ้านนักเรียนนักศึกษา', 'hint' => 'เห็นตัวบ้านและสภาพแวดล้อม'],
-    ['icon' => '👨‍👩‍👧', 'label' => 'ภาพนักเรียนพร้อมครอบครัว', 'hint' => 'ถ่ายที่บ้านพักอาศัย'],
-    ['icon' => '🧑‍🏫', 'label' => 'ภาพครอบครัวพร้อมครูที่ปรึกษา', 'hint' => 'หลักฐานการเยี่ยมบ้าน'],
-];
 ?>
 <?php if (!empty($_GET['sent'])): ?>
   <div class="flash ok">ส่งรายงานการเยี่ยมบ้านเรียบร้อย — สถานะเปลี่ยนเป็น "รอตรวจสอบ"</div>
@@ -37,7 +32,7 @@ $photos = [
   </div>
 </div>
 
-<form method="post" action="index.php?r=visit&id=<?= (int)$visit['id'] ?>&step=<?= $step ?>">
+<form method="post" action="index.php?r=visit&id=<?= (int)$visit['id'] ?>&step=<?= $step ?>" enctype="multipart/form-data">
   <?= csrf_field() ?>
   <input type="hidden" name="lat" id="lat" value="<?= e((string)$lat) ?>">
   <input type="hidden" name="lng" id="lng" value="<?= e((string)$lng) ?>">
@@ -52,7 +47,7 @@ $photos = [
     <div class="grid fields">
       <?php foreach ($s['fields'] as $f):
         $v = $val($f['id']);
-        $full = !empty($f['full']) || in_array($f['type'], ['area', 'chips', 'map', 'photos'], true);
+        $full = !empty($f['full']) || in_array($f['type'], ['area', 'chips', 'map', 'photos', 'files'], true);
         $showIf = $f['showIf'] ?? null;
         $showIfAttr = '';
         if ($showIf) {
@@ -132,13 +127,45 @@ $photos = [
 
           <?php elseif ($f['type'] === 'photos'): ?>
             <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
-              <?php foreach ($photos as $p): ?>
-                <div style="height:120px;border-radius:12px;border:1.5px dashed var(--border);background:var(--surface2);display:grid;place-items:center;text-align:center;padding:10px;font-size:12px" class="muted">
-                  <div><?= $p['icon'] ?><br><strong><?= e($p['label']) ?></strong><br><span style="font-size:10.5px"><?= e($p['hint']) ?></span></div>
+              <?php foreach ($f['kinds'] as $kind => $p): $pid = $photoKinds[$kind] ?? null; ?>
+                <div style="display:flex;flex-direction:column;gap:7px">
+                  <?php if ($pid): ?>
+                    <div style="position:relative;height:132px;border-radius:12px;overflow:hidden;border:1px solid var(--border)">
+                      <img src="index.php?r=photo&pid=<?= (int)$pid ?>" alt="<?= e($p['label']) ?>" style="width:100%;height:100%;object-fit:cover;display:block">
+                      <span class="pill ok" style="position:absolute;top:6px;right:6px">✓ แนบแล้ว</span>
+                    </div>
+                  <?php else: ?>
+                    <div style="display:grid;place-items:center;gap:6px;height:132px;border-radius:12px;border:1.5px dashed var(--border);background:var(--surface2);text-align:center;padding:10px">
+                      <span style="font-size:22px"><?= $p['icon'] ?></span>
+                      <span style="font-size:12px;font-weight:600;line-height:1.35"><?= e($p['label']) ?></span>
+                      <span style="font-size:10.5px;color:var(--faint)"><?= e($p['hint']) ?></span>
+                    </div>
+                  <?php endif; ?>
+                  <label class="btn <?= $pid ? 'sec' : '' ?> sm rvc-filebtn" style="cursor:pointer;text-align:center;display:block;position:relative;overflow:hidden">
+                    <span class="rvc-filebtn-text"><?= $pid ? '🔁 เปลี่ยนภาพ' : '📷 แนบภาพ' ?></span>
+                    <input type="file" name="photo[<?= e($kind) ?>]" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0">
+                  </label>
                 </div>
               <?php endforeach; ?>
             </div>
-            <span class="muted" style="font-size:11.5px">อัปโหลดภาพจริงได้ในหน้าแก้ไขรายงาน (ต้องเปิดสิทธิ์เขียนโฟลเดอร์ storage/uploads)</span>
+            <span class="muted" style="font-size:11.5px">เลือกไฟล์ภาพแล้วกด "บันทึกฉบับร่าง" หรือปุ่มถัดไปเพื่ออัปโหลด · รองรับ JPG/PNG/WEBP/GIF สูงสุด 5 MB ต่อภาพ</span>
+
+          <?php elseif ($f['type'] === 'files'): ?>
+            <?php if ($docs): ?>
+              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:4px">
+                <?php foreach ($docs as $d): ?>
+                  <a href="index.php?r=photo&pid=<?= (int)$d['id'] ?>" target="_blank" rel="noopener"
+                     style="display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);font-size:12.5px;color:var(--text)">
+                    📎 <?= e($d['label'] ?: 'เอกสารแนบ') ?>
+                    <span class="muted" style="margin-left:auto;font-size:11px"><?= e($d['uploaded_at']) ?></span>
+                  </a>
+                <?php endforeach; ?>
+              </div>
+            <?php endif; ?>
+            <label class="btn sec sm rvc-filebtn" style="cursor:pointer;display:inline-block;position:relative;overflow:hidden">
+              <span class="rvc-filebtn-text">📎 แนบไฟล์เพิ่มเติม</span>
+              <input type="file" name="docs[]" accept=".pdf,image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0">
+            </label>
           <?php endif; ?>
 
           <?php if (!empty($f['help'])): ?><span class="muted" style="font-size:11.5px"><?= e($f['help']) ?></span><?php endif; ?>
@@ -170,5 +197,17 @@ document.addEventListener('change', function(e){
   document.querySelectorAll('[data-show-if="' + id + '"]').forEach(function(el){
     el.hidden = (t.value !== el.getAttribute('data-show-val'));
   });
+});
+
+// แสดงชื่อไฟล์ที่เลือกไว้บนปุ่มแนบไฟล์ (input จริงถูกซ่อนไว้ด้วย CSS) ให้ผู้ใช้เห็นว่ากดแล้วมีผลจริง
+document.addEventListener('change', function(e){
+  var input = e.target;
+  if (input.type !== 'file') return;
+  var textEl = input.closest('.rvc-filebtn').querySelector('.rvc-filebtn-text');
+  if (!textEl) return;
+  if (!input.files || !input.files.length) return;
+  textEl.textContent = input.files.length > 1
+    ? '✓ เลือกแล้ว ' + input.files.length + ' ไฟล์'
+    : '✓ ' + input.files[0].name;
 });
 </script>

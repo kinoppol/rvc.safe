@@ -57,6 +57,43 @@ if ($r === 'logout') {
 Auth::requireLogin();
 $me = Auth::user();
 
+/* ---------------- Serve visit attachment (photo/document) ---------------- */
+if ($r === 'photo') {
+    $pid = (int)($_GET['pid'] ?? 0);
+    $st = $pdo->prepare(
+        'SELECT p.path, p.label, v.student_id FROM visit_photos p JOIN visits v ON v.id = p.visit_id WHERE p.id = ?'
+    );
+    $st->execute([$pid]);
+    $photo = $st->fetch();
+    if (!$photo) { http_response_code(404); exit('ไม่พบไฟล์'); }
+
+    $scopeIds = teacher_scope_ids($pdo);
+    if ($scopeIds !== null && !in_array((int)$photo['student_id'], $scopeIds, true)) {
+        http_response_code(403);
+        exit('ไม่มีสิทธิ์เข้าถึงไฟล์นี้');
+    }
+
+    $path = BASE_PATH . '/' . $photo['path'];
+    if (!is_file($path)) { http_response_code(404); exit('ไม่พบไฟล์'); }
+
+    $mime = match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
+        'jpg', 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'gif' => 'image/gif',
+        'pdf' => 'application/pdf',
+        default => 'application/octet-stream',
+    };
+    header('Content-Type: ' . $mime);
+    header('Content-Length: ' . filesize($path));
+    header('Cache-Control: private, max-age=3600');
+    if ($photo['label']) {
+        header('Content-Disposition: inline; filename="' . rawurlencode($photo['label']) . '"');
+    }
+    readfile($path);
+    exit;
+}
+
 /* ---------------- Dashboard ---------------- */
 if ($r === 'dashboard') {
     // ครูที่ปรึกษาเห็นเฉพาะนักเรียนในกลุ่มที่ตนเองเป็นที่ปรึกษา; head/exec/admin เห็นภาพรวมทั้งหมด
@@ -171,7 +208,7 @@ if ($r === 'visit') {
         $act = $_POST['act'] ?? 'next';
         $posted = $_POST['f'] ?? [];
         foreach ($steps[$step - 1]['fields'] as $f) {
-            if (in_array($f['type'], ['map', 'photos'], true)) { continue; }
+            if (in_array($f['type'], ['map', 'photos', 'files'], true)) { continue; }
             $val = $posted[$f['id']] ?? ($f['type'] === 'chips' ? [] : '');
             $data[$f['id']] = is_array($val) ? array_values($val) : trim((string)$val);
         }
@@ -181,6 +218,39 @@ if ($r === 'visit') {
                 ->execute([(float)$_POST['lat'], (float)$_POST['lng'], $id]);
         }
 
+        // อัปโหลดไฟล์แนบ (ภาพ 3 ประเภทตายตัว + เอกสารแนบทั่วไปหลายไฟล์)
+        $uploadErrors = [];
+        foreach ($steps[$step - 1]['fields'] as $f) {
+            if ($f['type'] === 'photos') {
+                foreach (array_keys($f['kinds']) as $kind) {
+                    $file = [
+                        'name' => $_FILES['photo']['name'][$kind] ?? null,
+                        'type' => $_FILES['photo']['type'][$kind] ?? null,
+                        'tmp_name' => $_FILES['photo']['tmp_name'][$kind] ?? null,
+                        'error' => $_FILES['photo']['error'][$kind] ?? UPLOAD_ERR_NO_FILE,
+                        'size' => $_FILES['photo']['size'][$kind] ?? 0,
+                    ];
+                    $err = save_visit_upload($pdo, $id, $kind, $file, RVC_IMAGE_MIMES, 5 * 1024 * 1024);
+                    if ($err) { $uploadErrors[] = $err; }
+                }
+            } elseif ($f['type'] === 'files' && !empty($_FILES['docs']['name'])) {
+                foreach ($_FILES['docs']['name'] as $i => $origName) {
+                    if ($origName === '') { continue; }
+                    $file = [
+                        'name' => $origName,
+                        'type' => $_FILES['docs']['type'][$i] ?? null,
+                        'tmp_name' => $_FILES['docs']['tmp_name'][$i] ?? null,
+                        'error' => $_FILES['docs']['error'][$i] ?? UPLOAD_ERR_NO_FILE,
+                        'size' => $_FILES['docs']['size'][$i] ?? 0,
+                    ];
+                    $label = mb_substr(basename($origName), 0, 160);
+                    $err = save_visit_upload($pdo, $id, 'doc', $file, RVC_DOC_MIMES, 10 * 1024 * 1024, $label);
+                    if ($err) { $uploadErrors[] = $err; }
+                }
+            }
+        }
+        if ($uploadErrors) { flash(implode(' · ', array_unique($uploadErrors)), 'err'); }
+
         $newStep = $step;
         if ($act === 'next')  { $newStep = min(8, $step + 1); }
         if ($act === 'prev')  { $newStep = max(1, $step - 1); }
@@ -189,6 +259,16 @@ if ($r === 'visit') {
         $status = $visit['status'];
         $screen = $data['screen'] ?? $visit['screen_result'];
         $urgent = (isset($data['urgent']) && in_array('จำเป็น', (array)$data['urgent'], true)) ? 1 : 0;
+
+        if ($act === 'submit') {
+            $pc = $pdo->prepare('SELECT COUNT(DISTINCT kind) FROM visit_photos WHERE visit_id = ? AND kind IN (\'home\',\'family\',\'teacher\')');
+            $pc->execute([$id]);
+            if ((int)$pc->fetchColumn() < 3) {
+                flash('กรุณาแนบภาพถ่ายให้ครบทั้ง 3 ภาพก่อนส่งรายงาน', 'err');
+                $act = 'draft';
+                $newStep = $step;
+            }
+        }
 
         if ($act === 'submit') {
             $status = 'รอตรวจสอบ';
@@ -221,7 +301,15 @@ if ($r === 'visit') {
         redirect('index.php?r=visit&id=' . $id . '&step=' . $newStep . ($act === 'submit' ? '&sent=1' : ''));
     }
 
-    render('visit_form', compact('visit', 'steps', 'data', 'step'), 'บันทึกการเยี่ยมบ้าน');
+    $photoKinds = $pdo->prepare("SELECT kind, id FROM visit_photos WHERE visit_id = ? AND kind IN ('home','family','teacher')");
+    $photoKinds->execute([$id]);
+    $photoKinds = $photoKinds->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    $docs = $pdo->prepare("SELECT id, label, uploaded_at FROM visit_photos WHERE visit_id = ? AND kind = 'doc' ORDER BY uploaded_at DESC");
+    $docs->execute([$id]);
+    $docs = $docs->fetchAll();
+
+    render('visit_form', compact('visit', 'steps', 'data', 'step', 'photoKinds', 'docs'), 'บันทึกการเยี่ยมบ้าน');
     exit;
 }
 
