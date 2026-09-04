@@ -46,7 +46,7 @@
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <input type="text" id="rmsUrl" value="<?= e($rmsUrl) ?>" placeholder="http://rms.rvc.ac.th"
            style="flex:1;min-width:240px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface2)">
-    <button class="btn sec" onclick="saveUrl()">บันทึก URL</button>
+    <button class="btn sec" id="saveUrlBtn" onclick="saveUrl()">บันทึก URL</button>
   </div>
   <span class="muted" style="font-size:11.5px">โอนข้อมูลนักเรียนล่าสุด: <?= e($lastSync ?: 'ยังไม่เคยโอน') ?></span>
 </section>
@@ -111,6 +111,18 @@ async function post(action, extra){
     return { success:false, message: res.status === 419
       ? 'เซสชันหมดอายุ กรุณารีเฟรชหน้านี้แล้วลองใหม่ (กด F5)'
       : 'การตอบกลับจากเซิร์ฟเวอร์ไม่ถูกต้อง (HTTP ' + res.status + ')' };
+  }
+}
+
+async function saveUrl(){
+  const btn = document.getElementById('saveUrlBtn');
+  const url = document.getElementById('rmsUrl').value.trim();
+  btn.disabled = true;
+  try {
+    const r = await post('save_url', { rms_base_url: url });
+    alert(r.message || (r.success ? 'บันทึกแล้ว' : 'เกิดข้อผิดพลาด'));
+  } finally {
+    btn.disabled = false;
   }
 }
 
