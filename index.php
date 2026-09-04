@@ -159,6 +159,13 @@ if ($r === 'visit') {
     $data  = json_decode($visit['data_json'] ?? '[]', true) ?: [];
     $step  = max(1, min(8, (int)($_GET['step'] ?? $visit['current_step'] ?? 1)));
 
+    // ค่าเริ่มต้นจากข้อมูลปัจจุบัน/ผู้ใช้ที่ล็อกอิน — เติมเฉพาะฟิลด์ที่ยังไม่เคยกรอก (ไม่ทับของเดิม)
+    if (!array_key_exists('term', $data))    { $data['term']    = get_setting('current_term', '1/2569'); }
+    if (!array_key_exists('vdate', $data))   { $data['vdate']   = date('Y-m-d'); }
+    if (!array_key_exists('advisor', $data)) { $data['advisor'] = $me['full_name']; }
+    // ที่อยู่: ใช้ค่าจากระเบียนนักเรียนถ้ามี (เช่น จากการเยี่ยมครั้งก่อน) เป็นค่าเริ่มต้นได้เลย
+    if (!array_key_exists('addr', $data) && !empty($visit['address'])) { $data['addr'] = $visit['address']; }
+
     if ($method === 'POST') {
         csrf_verify();
         $act = $_POST['act'] ?? 'next';

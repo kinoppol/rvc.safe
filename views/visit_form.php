@@ -52,8 +52,17 @@ $photos = [
     <div class="grid fields">
       <?php foreach ($s['fields'] as $f):
         $v = $val($f['id']);
-        $full = !empty($f['full']) || in_array($f['type'], ['area', 'chips', 'map', 'photos'], true); ?>
-        <label class="field <?= $full ? 'full' : '' ?>">
+        $full = !empty($f['full']) || in_array($f['type'], ['area', 'chips', 'map', 'photos'], true);
+        $showIf = $f['showIf'] ?? null;
+        $showIfAttr = '';
+        if ($showIf) {
+            $ctrlVal = $val($showIf[0]);
+            $ctrlArr = is_array($ctrlVal) ? $ctrlVal : [$ctrlVal];
+            $visible = in_array($showIf[1], $ctrlArr, true);
+            $showIfAttr = ' data-show-if="' . e($showIf[0]) . '" data-show-val="' . e($showIf[1]) . '"' . ($visible ? '' : ' hidden');
+        }
+        ?>
+        <label class="field <?= $full ? 'full' : '' ?>"<?= $showIfAttr ?>>
           <span class="lbl"><?= e($f['label']) ?><?php if (!empty($f['required'])): ?><span style="color:var(--danger)">*</span><?php endif; ?></span>
 
           <?php if (in_array($f['type'], ['text', 'number', 'date', 'time', 'tel'], true)): ?>
@@ -83,15 +92,43 @@ $photos = [
             </div>
 
           <?php elseif ($f['type'] === 'map'): ?>
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
             <div style="display:flex;flex-direction:column;gap:10px">
-              <div style="height:150px;border-radius:12px;border:1px solid var(--border);background:linear-gradient(160deg,var(--primary-weak),var(--surface2));display:grid;place-items:center;color:var(--muted);font-size:12.5px">
-                📍 พิกัดบ้าน: <span id="coordText"><?= e(number_format((float)$lat, 5)) ?>, <?= e(number_format((float)$lng, 5)) ?></span>
-              </div>
+              <div id="leafletMap" style="height:220px;border-radius:12px;border:1px solid var(--border)"></div>
+              <span class="muted" style="font-size:11.5px">📍 พิกัดบ้าน: <span id="coordText"><?= e(number_format((float)$lat, 5)) ?>, <?= e(number_format((float)$lng, 5)) ?></span> · แตะบนแผนที่หรือลากหมุดเพื่อปรับตำแหน่ง</span>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn sec sm" style="flex:1;min-width:150px" onclick="rvcLocate()">📍 ปักหมุดตำแหน่งปัจจุบัน</button>
                 <a class="btn sm" style="flex:1;min-width:150px" id="mapLink" href="<?= e(maps_url($lat, $lng)) ?>" target="_blank" rel="noopener">🧭 เปิด Google Maps</a>
               </div>
             </div>
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            <script>
+              (function(){
+                var lat0 = <?= json_encode((float)$lat) ?>, lng0 = <?= json_encode((float)$lng) ?>;
+                var map = L.map('leafletMap').setView([lat0, lng0], 15);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                  maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+                var marker = L.marker([lat0, lng0], { draggable: true }).addTo(map);
+                function rvcSetCoord(la, ln){
+                  document.getElementById('lat').value = la;
+                  document.getElementById('lng').value = ln;
+                  var t = document.getElementById('coordText'); if (t) t.textContent = la.toFixed(5) + ', ' + ln.toFixed(5);
+                  var l = document.getElementById('mapLink'); if (l) l.href = 'https://www.google.com/maps/dir/?api=1&destination=' + la + ',' + ln + '&travelmode=driving';
+                }
+                marker.on('dragend', function(){ var p = marker.getLatLng(); rvcSetCoord(p.lat, p.lng); });
+                map.on('click', function(e){ marker.setLatLng(e.latlng); rvcSetCoord(e.latlng.lat, e.latlng.lng); });
+                window.rvcLocate = function(){
+                  if (!navigator.geolocation) { alert('อุปกรณ์ไม่รองรับ GPS'); return; }
+                  navigator.geolocation.getCurrentPosition(function(p){
+                    var la = p.coords.latitude, ln = p.coords.longitude;
+                    marker.setLatLng([la, ln]); map.setView([la, ln], 16);
+                    rvcSetCoord(la, ln);
+                  }, function(){ alert('ไม่สามารถอ่านตำแหน่งได้'); });
+                };
+                setTimeout(function(){ map.invalidateSize(); }, 200);
+              })();
+            </script>
 
           <?php elseif ($f['type'] === 'photos'): ?>
             <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
@@ -123,14 +160,15 @@ $photos = [
 
 <script>
 function rvcGoto(n){ document.getElementById('step_to').value = n; document.getElementById('gotoForm').submit(); }
-function rvcLocate(){
-  if(!navigator.geolocation) return alert('อุปกรณ์ไม่รองรับ GPS');
-  navigator.geolocation.getCurrentPosition(function(p){
-    var la = p.coords.latitude, ln = p.coords.longitude;
-    document.getElementById('lat').value = la;
-    document.getElementById('lng').value = ln;
-    var t = document.getElementById('coordText'); if(t) t.textContent = la.toFixed(5)+', '+ln.toFixed(5);
-    var l = document.getElementById('mapLink'); if(l) l.href = 'https://www.google.com/maps/dir/?api=1&destination='+la+','+ln+'&travelmode=driving';
-  }, function(){ alert('ไม่สามารถอ่านตำแหน่งได้'); });
-}
+
+// ซ่อน/แสดงฟิลด์ที่มีเงื่อนไข (เช่น "ระบุผู้ให้ข้อมูล" เมื่อเลือก "อื่นๆ") ตามค่าฟิลด์ควบคุมแบบสด
+document.addEventListener('change', function(e){
+  var t = e.target;
+  var m = t.name && t.name.match(/^f\[([^\]]+)\]$/);
+  if (!m) return;
+  var id = m[1];
+  document.querySelectorAll('[data-show-if="' + id + '"]').forEach(function(el){
+    el.hidden = (t.value !== el.getAttribute('data-show-val'));
+  });
+});
 </script>

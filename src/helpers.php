@@ -57,11 +57,13 @@ function view(string $name, array $data = []): void
     require $file;
 }
 
-function render(string $name, array $data = [], string $title = ''): void
+function render(string $name, array $vars = [], string $title = ''): void
 {
     $__title = $title;
     $__view  = $name;
-    extract($data, EXTR_SKIP);
+    // ตั้งใจใช้ชื่อพารามิเตอร์ $vars ไม่ใช่ $data — กัน extract(EXTR_SKIP) ข้ามคีย์ 'data'
+    // เมื่อ view ถูกเรียกด้วย compact(...,'data',...) เช่นเดียวกับ ?r=visit (8 ขั้นตอน)
+    extract($vars, EXTR_SKIP);
     require BASE_PATH . '/views/layout.php';
 }
 

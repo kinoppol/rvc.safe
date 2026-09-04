@@ -16,7 +16,8 @@ return [
             ['id' => 'method', 'label' => 'รูปแบบการเยี่ยม', 'type' => 'chips', 'chips' => ['เยี่ยมบ้านจริง', 'นัดพบนอกบ้าน', 'วิดีโอคอล', 'โทรศัพท์']],
             ['id' => 'advisor', 'label' => 'ครูที่ปรึกษาผู้เยี่ยม', 'type' => 'text', 'placeholder' => 'ชื่อ-นามสกุล', 'required' => true],
             ['id' => 'cojoin', 'label' => 'ผู้ร่วมเยี่ยม', 'type' => 'text', 'placeholder' => 'เช่น ครูแนะแนว, หัวหน้าแผนก'],
-            ['id' => 'informant', 'label' => 'ผู้ให้ข้อมูล/ความเกี่ยวข้อง', 'type' => 'text', 'placeholder' => 'เช่น มารดา'],
+            ['id' => 'informant', 'label' => 'ผู้ให้ข้อมูล/ความเกี่ยวข้อง', 'type' => 'select', 'options' => ['บิดา', 'มารดา', 'ผู้ปกครอง', 'อื่นๆ']],
+            ['id' => 'informant_other', 'label' => 'ระบุผู้ให้ข้อมูล', 'type' => 'text', 'placeholder' => 'ระบุว่าเป็นใคร', 'showIf' => ['informant', 'อื่นๆ']],
         ],
     ],
     [
