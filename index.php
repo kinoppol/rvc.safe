@@ -566,6 +566,47 @@ if ($r === 'rms') {
 }
 
 /* ---------------- System check (admin) ---------------- */
+/* ---------------- SSO (ONE-RVC) settings (admin) ---------------- */
+if ($r === 'sso') {
+    Auth::requireRole('admin');
+
+    if ($method === 'POST') {
+        csrf_verify();
+        $authorize = trim($_POST['authorize_endpoint'] ?? '');
+        $verify    = trim($_POST['verify_endpoint'] ?? '');
+        $clientId  = trim($_POST['client_id'] ?? '');
+
+        $errors = [];
+        foreach (['authorize_endpoint' => $authorize, 'verify_endpoint' => $verify] as $label => $val) {
+            if ($val !== '' && !preg_match('#^https?://#i', $val)) {
+                $errors[] = ($label === 'authorize_endpoint' ? 'Authorize endpoint' : 'Verify endpoint') . ' ต้องขึ้นต้นด้วย http:// หรือ https://';
+            }
+        }
+
+        if ($errors) {
+            flash(implode(' · ', $errors), 'err');
+        } else {
+            set_setting('sso_authorize_endpoint', $authorize);
+            set_setting('sso_verify_endpoint', $verify);
+            set_setting('sso_client_id', $clientId);
+            activity_log($pdo, 'อัปเดตการตั้งค่า SSO (ONE-RVC)');
+            flash('บันทึกการตั้งค่า SSO เรียบร้อย', 'ok');
+        }
+        redirect('index.php?r=sso');
+    }
+
+    $ssoDefaults = require BASE_PATH . '/config/config.sample.php';
+    $ssoDefaults = $ssoDefaults['sso'] ?? [];
+    $ssoOverride = [
+        'authorize_endpoint' => get_setting('sso_authorize_endpoint', ''),
+        'verify_endpoint'    => get_setting('sso_verify_endpoint', ''),
+        'client_id'          => get_setting('sso_client_id', ''),
+    ];
+    $ssoEffective = Sso::config();
+    render('sso_settings', compact('ssoDefaults', 'ssoOverride', 'ssoEffective'), 'ตั้งค่า SSO (ONE-RVC)');
+    exit;
+}
+
 if ($r === 'system') {
     Auth::requireRole('admin');
     $checks = Support::all($cfg['db']);

@@ -12,9 +12,25 @@ declare(strict_types=1);
  */
 final class Sso
 {
+    /**
+     * ค่าตั้งต้นมาจาก config/config.sample.php แต่ผู้ดูแลปรับ endpoint ได้จากหน้า "ตั้งค่า SSO"
+     * (เก็บใน settings) — จำเป็นเพราะบางเครือข่ายเข้าโดเมนสาธารณะจากฝั่งเซิร์ฟเวอร์ไม่ได้
+     * (เช่น เซิร์ฟเวอร์ ONE-RVC อยู่ bridge เดียวกัน ต้องเรียกผ่าน private IP แทน) ในขณะที่
+     * authorize_endpoint ต้องเป็นโดเมนสาธารณะเสมอเพราะเป็น URL ที่เบราว์เซอร์ผู้ใช้ redirect ไป
+     * redirect_uri ไม่ให้แก้ผ่าน UI เพราะต้องตรงกับที่ลงทะเบียนไว้เป๊ะ ๆ เท่านั้น
+     */
     public static function config(): array
     {
-        return app_config()['sso'] ?? [];
+        $cfg = app_config()['sso'] ?? [];
+        $override = [
+            'authorize_endpoint' => get_setting('sso_authorize_endpoint'),
+            'verify_endpoint'    => get_setting('sso_verify_endpoint'),
+            'client_id'          => get_setting('sso_client_id'),
+        ];
+        foreach ($override as $k => $v) {
+            if ($v !== null && $v !== '') { $cfg[$k] = $v; }
+        }
+        return $cfg;
     }
 
     public static function enabled(): bool
