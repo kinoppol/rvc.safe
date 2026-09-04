@@ -1,0 +1,7 @@
+/config/config.php
+/storage/uploads/*
+/storage/logs/*
+!/storage/**/.gitignore
+/vendor/
+*.probe_*
+.DS_Store
