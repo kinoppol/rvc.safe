@@ -569,7 +569,24 @@ if ($r === 'rms') {
 if ($r === 'system') {
     Auth::requireRole('admin');
     $checks = Support::all($cfg['db']);
-    render('system', compact('checks', 'cfg'), 'สถานะระบบ');
+
+    if (($_GET['action'] ?? '') === 'clear_log') {
+        csrf_verify();
+        @file_put_contents(BASE_PATH . '/storage/logs/php-error.log', '');
+        redirect('index.php?r=system');
+    }
+
+    $logPath = BASE_PATH . '/storage/logs/php-error.log';
+    $errorLog = '';
+    if (is_file($logPath)) {
+        $size = filesize($logPath);
+        $fh = fopen($logPath, 'r');
+        fseek($fh, max(0, $size - 20000)); // อ่านท้ายไฟล์ ~20KB ล่าสุด กันไฟล์ log ใหญ่เกินไป
+        $errorLog = fread($fh, 20000);
+        fclose($fh);
+    }
+
+    render('system', compact('checks', 'cfg', 'errorLog'), 'สถานะระบบ');
     exit;
 }
 

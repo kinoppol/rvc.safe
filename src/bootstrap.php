@@ -62,6 +62,11 @@ function boot_app(): array
     $cfg = app_config();
     ini_set('display_errors', ($cfg['app']['env'] ?? 'production') === 'development' ? '1' : '0');
 
+    // บันทึก error ลงไฟล์เสมอ (ไม่ขึ้นกับ display_errors) เพื่อวินิจฉัยปัญหาบน production ได้
+    // โดยไม่เปิดเผยรายละเอียดให้ผู้ใช้เห็น — อ่านได้จาก storage/logs/php-error.log
+    ini_set('log_errors', '1');
+    ini_set('error_log', BASE_PATH . '/storage/logs/php-error.log');
+
     $pdo = Database::connect($cfg['db']);
 
     if (session_status() !== PHP_SESSION_ACTIVE) {
