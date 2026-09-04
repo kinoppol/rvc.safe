@@ -9,7 +9,14 @@ $navBadges = ['visits' => 0, 'reports' => 0, 'migrations' => 0];
 if ($user) {
     try {
         $pdo = Database::pdo();
-        $navBadges['visits']  = (int)$pdo->query("SELECT COUNT(*) FROM visits WHERE status IN ('รอเยี่ยม','ฉบับร่าง','เกินกำหนด')")->fetchColumn();
+        $scopeIds = teacher_scope_ids($pdo);
+        [$scopeCond, $scopeArgs] = scope_where('s.id', $scopeIds);
+        $bst = $pdo->prepare(
+            "SELECT COUNT(*) FROM visits v JOIN students s ON s.id = v.student_id
+             WHERE v.status IN ('รอเยี่ยม','ฉบับร่าง','เกินกำหนด')" . ($scopeCond !== '' ? " AND $scopeCond" : '')
+        );
+        $bst->execute($scopeArgs);
+        $navBadges['visits'] = (int)$bst->fetchColumn();
         $navBadges['reports'] = (int)$pdo->query("SELECT COUNT(*) FROM visits WHERE status IN ('รอตรวจสอบ','ผ่านหัวหน้างาน')")->fetchColumn();
         if ($role === 'admin') {
             $navBadges['migrations'] = count((new Migrator($pdo))->pending());

@@ -108,6 +108,47 @@ function activity_log(PDO $pdo, string $text, ?int $uid = null): void
     }
 }
 
+/**
+ * ครูที่ปรึกษาเยี่ยมบ้านได้เฉพาะนักเรียนในกลุ่มที่ตนเองเป็นที่ปรึกษาเท่านั้น
+ * คืน array id นักเรียนที่อยู่ในความดูแล (อาจว่างเปล่า) หรือ null เมื่อไม่จำกัด (head/exec/admin)
+ *
+ * จับคู่หลักผ่าน student_groups: users.people_id === student_groups.teacher_idcard (เลขบัตรประชาชน
+ * เป็น namespace เดียวกันทั้งสองชุดข้อมูลจาก RMS) แม่นยำกว่าการเทียบชื่อ เพราะชื่อใน users อาจมีคำนำหน้า/ยศ
+ * ที่ไม่ตรงกับ student_groups.teacher_name เป๊ะ ๆ
+ * ถ้าบัญชีไม่มี people_id (สร้างเองในระบบ ไม่ได้มาจาก RMS) จึงย้อนกลับไปจับคู่ด้วยชื่อกับ students.advisor_name แทน
+ */
+function teacher_scope_ids(PDO $pdo): ?array
+{
+    $u = Auth::user();
+    if (!$u || $u['role'] !== 'teacher') { return null; }
+
+    if (!empty($u['people_id'])) {
+        $st = $pdo->prepare(
+            'SELECT DISTINCT s.id FROM students s
+             JOIN student_groups sg ON sg.group_code = s.group_code
+             WHERE sg.teacher_idcard = ?'
+        );
+        $st->execute([$u['people_id']]);
+        $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+        if ($ids) { return $ids; }
+    }
+
+    $st = $pdo->prepare('SELECT id FROM students WHERE advisor_name = ?');
+    $st->execute([$u['full_name']]);
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/**
+ * สร้างเงื่อนไข SQL "$col IN (...)" จาก scope ids ของ teacher_scope_ids()
+ * คืน [sql, args] — sql เป็น '' เมื่อไม่จำกัด (null), เป็นเงื่อนไขที่ไม่ตรงกับแถวใดเลยเมื่อครูไม่มีนักเรียนในดูแล ([])
+ */
+function scope_where(string $col, ?array $ids): array
+{
+    if ($ids === null) { return ['', []]; }
+    if (!$ids) { return ["$col = -1", []]; }
+    return ["$col IN (" . implode(',', array_fill(0, count($ids), '?')) . ')', $ids];
+}
+
 function status_pill(string $s): string
 {
     $m = [

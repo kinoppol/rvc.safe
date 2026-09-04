@@ -59,26 +59,60 @@ $me = Auth::user();
 
 /* ---------------- Dashboard ---------------- */
 if ($r === 'dashboard') {
-    $stats = [
-        'total'   => (int)$pdo->query('SELECT COUNT(*) FROM students')->fetchColumn(),
-        'done'    => (int)$pdo->query("SELECT COUNT(*) FROM visits WHERE status IN ('บันทึกแล้ว','รอตรวจสอบ','ผ่านหัวหน้างาน','ลงนามแล้ว')")->fetchColumn(),
-        'pending' => (int)$pdo->query("SELECT COUNT(*) FROM visits WHERE status IN ('ฉบับร่าง','รอเยี่ยม')")->fetchColumn(),
-        'urgent'  => (int)$pdo->query('SELECT COUNT(*) FROM visits WHERE urgent = 1')->fetchColumn(),
-    ];
-    $depts = $pdo->query(
+    // ครูที่ปรึกษาเห็นเฉพาะนักเรียนในกลุ่มที่ตนเองเป็นที่ปรึกษา; head/exec/admin เห็นภาพรวมทั้งหมด
+    $scopeIds = teacher_scope_ids($pdo);
+    [$scopeCond, $scopeArgs] = scope_where('s.id', $scopeIds);
+    $andScope = $scopeCond !== '' ? " AND $scopeCond" : '';
+
+    $st = $pdo->prepare('SELECT COUNT(*) FROM students s WHERE 1=1' . $andScope);
+    $st->execute($scopeArgs);
+    $totalStudents = (int)$st->fetchColumn();
+
+    $st = $pdo->prepare(
+        "SELECT COUNT(*) FROM visits v JOIN students s ON s.id = v.student_id
+         WHERE v.status IN ('บันทึกแล้ว','รอตรวจสอบ','ผ่านหัวหน้างาน','ลงนามแล้ว')" . $andScope
+    );
+    $st->execute($scopeArgs);
+    $doneCount = (int)$st->fetchColumn();
+
+    $st = $pdo->prepare(
+        "SELECT COUNT(*) FROM visits v JOIN students s ON s.id = v.student_id
+         WHERE v.status IN ('ฉบับร่าง','รอเยี่ยม')" . $andScope
+    );
+    $st->execute($scopeArgs);
+    $pendingCount = (int)$st->fetchColumn();
+
+    $st = $pdo->prepare(
+        "SELECT COUNT(*) FROM visits v JOIN students s ON s.id = v.student_id
+         WHERE v.urgent = 1" . $andScope
+    );
+    $st->execute($scopeArgs);
+    $urgentCount = (int)$st->fetchColumn();
+
+    $stats = ['total' => $totalStudents, 'done' => $doneCount, 'pending' => $pendingCount, 'urgent' => $urgentCount];
+
+    $st = $pdo->prepare(
         "SELECT s.department AS name,
                 ROUND(100 * SUM(v.status IN ('บันทึกแล้ว','รอตรวจสอบ','ผ่านหัวหน้างาน','ลงนามแล้ว')) / NULLIF(COUNT(*),0)) AS pct
          FROM students s LEFT JOIN visits v ON v.student_id = s.id
-         WHERE s.department IS NOT NULL
+         WHERE s.department IS NOT NULL" . $andScope . "
          GROUP BY s.department ORDER BY pct DESC"
-    )->fetchAll();
+    );
+    $st->execute($scopeArgs);
+    $depts = $st->fetchAll();
+
     $feed = $pdo->query('SELECT a.*, u.full_name FROM activity_log a LEFT JOIN users u ON u.id = a.user_id ORDER BY a.id DESC LIMIT 8')->fetchAll();
-    $visits = $pdo->query(
+
+    $st = $pdo->prepare(
         "SELECT v.*, s.full_name, s.prefix, s.level, s.department, s.room, s.advisor_name, s.risk_group
-         FROM visits v JOIN students s ON s.id = v.student_id
+         FROM visits v JOIN students s ON s.id = v.student_id"
+        . ($scopeCond !== '' ? " WHERE $scopeCond" : '') . "
          ORDER BY FIELD(v.status,'เกินกำหนด','รอเยี่ยม','ฉบับร่าง','รอตรวจสอบ','บันทึกแล้ว','ลงนามแล้ว'), v.visit_date
          LIMIT 8"
-    )->fetchAll();
+    );
+    $st->execute($scopeArgs);
+    $visits = $st->fetchAll();
+
     render('dashboard', compact('stats', 'depts', 'feed', 'visits'), 'ภาพรวมการเยี่ยมบ้าน');
     exit;
 }
@@ -86,10 +120,15 @@ if ($r === 'dashboard') {
 /* ---------------- Visit list ---------------- */
 if ($r === 'visits') {
     $filter = $_GET['status'] ?? 'ทั้งหมด';
+    $scopeIds = teacher_scope_ids($pdo); // ครูที่ปรึกษาเห็นเฉพาะนักเรียนในกลุ่มที่ตนเองเป็นที่ปรึกษา
+    [$scopeCond, $scopeArgs] = scope_where('s.id', $scopeIds);
     $sql = "SELECT v.*, s.full_name, s.prefix, s.code, s.level, s.department, s.room, s.advisor_name, s.address, s.lat AS s_lat, s.lng AS s_lng, s.risk_group
             FROM visits v JOIN students s ON s.id = v.student_id";
-    $args = [];
-    if ($filter !== 'ทั้งหมด') { $sql .= ' WHERE v.status = ?'; $args[] = $filter; }
+    $where = [];
+    $args  = [];
+    if ($filter !== 'ทั้งหมด') { $where[] = 'v.status = ?'; $args[] = $filter; }
+    if ($scopeCond !== '')    { $where[] = $scopeCond; array_push($args, ...$scopeArgs); }
+    if ($where) { $sql .= ' WHERE ' . implode(' AND ', $where); }
     $sql .= ' ORDER BY v.visit_date, s.full_name';
     $st = $pdo->prepare($sql);
     $st->execute($args);
@@ -108,6 +147,13 @@ if ($r === 'visit') {
     $st->execute([$id]);
     $visit = $st->fetch();
     if (!$visit) { http_response_code(404); exit('ไม่พบรายการเยี่ยม'); }
+
+    // ครูที่ปรึกษาเปิด/แก้ไขได้เฉพาะนักเรียนในกลุ่มที่ตนเองเป็นที่ปรึกษา
+    $scopeIds = teacher_scope_ids($pdo);
+    if ($scopeIds !== null && !in_array((int)$visit['student_id'], $scopeIds, true)) {
+        http_response_code(403);
+        exit('คุณไม่มีสิทธิ์เข้าถึงรายการเยี่ยมบ้านของนักเรียนคนนี้ (ไม่ได้อยู่ในกลุ่มที่คุณเป็นครูที่ปรึกษา)');
+    }
 
     $steps = visit_steps();
     $data  = json_decode($visit['data_json'] ?? '[]', true) ?: [];
