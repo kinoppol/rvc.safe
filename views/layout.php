@@ -26,6 +26,7 @@ $groups = [
         ['r' => 'reports', 'icon' => '✓', 'label' => 'ตรวจสอบ/ลงนาม', 'badge' => $navBadges['reports'], 'roles' => ['head', 'exec', 'admin']],
     ],
     'ผู้ดูแลระบบ' => [
+        ['r' => 'users',      'icon' => '👤', 'label' => 'ผู้ใช้ระบบ', 'roles' => ['admin']],
         ['r' => 'rms',        'icon' => '⇄', 'label' => 'โอนข้อมูลจาก RMS', 'roles' => ['admin']],
         ['r' => 'migrations', 'icon' => '⇅', 'label' => 'Migration ฐานข้อมูล', 'badge' => $navBadges['migrations'], 'roles' => ['admin']],
         ['r' => 'system',     'icon' => '⚙', 'label' => 'สถานะระบบ', 'roles' => ['admin']],
@@ -39,6 +40,7 @@ $titles = [
     'reports'   => ['ตรวจสอบและลงนามรายงาน', 'ติดตามการดำเนินการแบบ Realtime'],
     'migrations'=> ['Migration ฐานข้อมูล', 'จัดการการปรับปรุงโครงสร้างฐานข้อมูล'],
     'rms'       => ['โอนข้อมูลจาก RMS', 'บุคลากร · ภาคเรียน · กลุ่มเรียน · นักเรียน (สำหรับงานเยี่ยมบ้าน)'],
+    'users'     => ['ผู้ใช้ระบบ', 'จัดการผู้ใช้ และสวมสิทธิ์เพื่อดูมุมมองของผู้ใช้'],
     'system'    => ['สถานะระบบ', 'ตรวจสอบแพ็กเกจและสิทธิ์ไฟล์'],
 ];
 [$pgTitle, $pgSub] = $titles[$__view] ?? [$__title ?: 'ระบบเยี่ยมบ้านนักเรียน', ''];
@@ -85,7 +87,7 @@ $titles = [
     </nav>
     <div style="padding:14px;border-top:1px solid var(--border);font-size:12px" class="muted">
       <?= e($user['full_name'] ?? '') ?><br>
-      <?= e(Auth::ROLES[$role] ?? '') ?> · <a href="index.php?r=logout">ออกจากระบบ</a>
+      <?= e(Auth::ROLES[$role] ?? '') ?> · <a href="index.php?r=logout"><?= Auth::isImpersonating() ? 'กลับเป็นผู้ดูแล' : 'ออกจากระบบ' ?></a>
     </div>
   </aside>
 
@@ -101,6 +103,12 @@ $titles = [
     </header>
 
     <div class="content">
+      <?php if (Auth::isImpersonating()): ?>
+        <div class="flash warn" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="flex:1">🎭 <strong><?= e(Auth::impersonatorName()) ?></strong> กำลังสวมสิทธิ์เป็น <strong><?= e($user['full_name'] ?? '') ?></strong> (<?= e(Auth::ROLES[$role] ?? '') ?>)</span>
+          <a class="btn sec sm" href="index.php?r=logout">กลับเป็นผู้ดูแลระบบ</a>
+        </div>
+      <?php endif; ?>
       <?php foreach (flash() as $f): ?>
         <div class="flash <?= e($f['type']) ?>"><?= e($f['msg']) ?></div>
       <?php endforeach; ?>

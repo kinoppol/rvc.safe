@@ -29,6 +29,15 @@ if ($r === 'login') {
 }
 
 if ($r === 'logout') {
+    if (Auth::isImpersonating()) {
+        // กำลังสวมสิทธิ์อยู่ → "ออกจากระบบ" หมายถึงคืนสิทธิ์ผู้ดูแลเดิม ไม่ใช่ปิด session
+        $impName = Auth::impersonatorName();
+        Auth::stopImpersonating();
+        activity_log($pdo, 'ผู้ดูแล ' . $impName . ' กลับสู่สิทธิ์ผู้ดูแลระบบ');
+        flash('กลับสู่บัญชีผู้ดูแลระบบแล้ว', 'ok');
+        redirect('index.php?r=dashboard');
+    }
+    activity_log($pdo, 'ออกจากระบบ');
     Auth::logout();
     redirect('index.php?r=login');
 }
@@ -213,6 +222,52 @@ if ($r === 'migrations') {
     $status = $migrator->status();
     $pendingCount = count($migrator->pending());
     render('migrations', compact('status', 'pendingCount', 'log'), 'Migration ฐานข้อมูล');
+    exit;
+}
+
+/* ---------------- Users + impersonation (admin) ---------------- */
+if ($r === 'users') {
+    Auth::requireRole('admin');
+
+    if ($method === 'POST') {
+        csrf_verify();
+        $action = $_POST['action'] ?? '';
+
+        if ($action === 'impersonate') {
+            $targetId = (int)($_POST['id'] ?? 0);
+            if ($targetId === (int)$me['id']) {
+                flash('ไม่สามารถสวมสิทธิ์บัญชีของตัวเองได้', 'err');
+                redirect('index.php?r=users');
+            }
+            $adminName = $me['full_name'];
+            $st = $pdo->prepare('SELECT full_name FROM users WHERE id = ?');
+            $st->execute([$targetId]);
+            $targetName = $st->fetchColumn() ?: ('#' . $targetId);
+
+            if (Auth::impersonate($targetId)) {
+                activity_log($pdo, "ผู้ดูแล {$adminName} สวมสิทธิ์เป็น {$targetName}");
+                redirect('index.php?r=dashboard');
+            }
+            flash('ไม่สามารถสวมสิทธิ์ผู้ใช้นี้ได้ (อาจถูกปิดใช้งาน หรือไม่พบผู้ใช้)', 'err');
+            redirect('index.php?r=users');
+        }
+
+        if ($action === 'toggle_active') {
+            $targetId = (int)($_POST['id'] ?? 0);
+            if ($targetId !== (int)$me['id']) {
+                $pdo->prepare('UPDATE users SET is_active = 1 - is_active WHERE id = ?')->execute([$targetId]);
+                activity_log($pdo, 'เปลี่ยนสถานะการใช้งานผู้ใช้ #' . $targetId);
+            }
+            redirect('index.php?r=users');
+        }
+
+        redirect('index.php?r=users');
+    }
+
+    $users = $pdo->query(
+        "SELECT * FROM users ORDER BY FIELD(role,'admin','head','exec','teacher'), full_name"
+    )->fetchAll();
+    render('users', compact('users'), 'ผู้ใช้ระบบ');
     exit;
 }
 
