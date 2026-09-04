@@ -5,6 +5,9 @@ final class Database
 {
     private static ?PDO $pdo = null;
 
+    /** ให้ทุก connection ของแอปนี้ใช้เวลา +07:00 (Asia/Bangkok) เสมอ ไม่ว่า timezone ของเซิร์ฟเวอร์ MariaDB จะตั้งเป็นอะไร */
+    private const TZ_OFFSET = '+07:00';
+
     public static function connect(array $db): PDO
     {
         if (self::$pdo instanceof PDO) {
@@ -18,6 +21,7 @@ final class Database
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
+            PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '" . self::TZ_OFFSET . "'",
         ]);
         return self::$pdo;
     }
@@ -27,7 +31,8 @@ final class Database
     {
         $dsn = sprintf('mysql:host=%s;port=%d;charset=%s', $db['host'], (int)$db['port'], $db['charset'] ?? 'utf8mb4');
         return new PDO($dsn, $db['user'], $db['pass'], [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+            PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '" . self::TZ_OFFSET . "'",
         ]);
     }
 
