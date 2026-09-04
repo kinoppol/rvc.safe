@@ -327,6 +327,45 @@ if ($r === 'users') {
             redirect($backUrl);
         }
 
+        // ผู้ดูแลแก้ไขบทบาทผู้ใช้ได้ (เช่น เลื่อนเป็นหัวหน้างานแนะแนว โดยยังทำหน้าที่ครูที่ปรึกษาได้ต่อ
+        // เพราะ head/exec/admin เห็นภาพรวมทั้งหมดอยู่แล้ว ครอบคลุมงานครูที่ปรึกษาในตัว)
+        if ($action === 'set_role') {
+            $targetId = (int)($_POST['id'] ?? 0);
+            $newRole = (string)($_POST['new_role'] ?? '');
+            if ($targetId !== (int)$me['id'] && isset(Auth::ROLES[$newRole])) {
+                $pdo->prepare('UPDATE users SET role = ? WHERE id = ?')->execute([$newRole, $targetId]);
+                activity_log($pdo, "เปลี่ยนบทบาทผู้ใช้ #{$targetId} เป็น " . Auth::ROLES[$newRole]);
+                flash('บันทึกบทบาทเรียบร้อย', 'ok');
+            }
+            redirect($backUrl);
+        }
+
+        // ผูกครูที่ปรึกษากับกลุ่มเรียนด้วยเลขบัตรประชาชน 13 หลัก (namespace เดียวกับ student_groups.teacher_idcard)
+        if ($action === 'set_idcard') {
+            $targetId = (int)($_POST['id'] ?? 0);
+            $pid = trim((string)($_POST['people_id'] ?? ''));
+            if ($targetId !== (int)$me['id']) {
+                if ($pid === '') {
+                    $pdo->prepare('UPDATE users SET people_id = NULL WHERE id = ?')->execute([$targetId]);
+                    activity_log($pdo, 'ล้างเลขบัตรประชาชนของผู้ใช้ #' . $targetId);
+                    flash('ล้างเลขบัตรประชาชนเรียบร้อย', 'ok');
+                } elseif (!preg_match('/^\d{13}$/', $pid)) {
+                    flash('เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก', 'err');
+                } else {
+                    $chk = $pdo->prepare('SELECT COUNT(*) FROM users WHERE people_id = ? AND id <> ?');
+                    $chk->execute([$pid, $targetId]);
+                    if ((int)$chk->fetchColumn() > 0) {
+                        flash('เลขบัตรประชาชนนี้ถูกใช้กับผู้ใช้อื่นในระบบแล้ว', 'err');
+                    } else {
+                        $pdo->prepare('UPDATE users SET people_id = ? WHERE id = ?')->execute([$pid, $targetId]);
+                        activity_log($pdo, 'ตั้งเลขบัตรประชาชนของผู้ใช้ #' . $targetId);
+                        flash('บันทึกเลขบัตรประชาชนเรียบร้อย', 'ok');
+                    }
+                }
+            }
+            redirect($backUrl);
+        }
+
         redirect($backUrl);
     }
 

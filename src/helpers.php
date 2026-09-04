@@ -110,31 +110,25 @@ function activity_log(PDO $pdo, string $text, ?int $uid = null): void
 
 /**
  * ครูที่ปรึกษาเยี่ยมบ้านได้เฉพาะนักเรียนในกลุ่มที่ตนเองเป็นที่ปรึกษาเท่านั้น
- * คืน array id นักเรียนที่อยู่ในความดูแล (อาจว่างเปล่า) หรือ null เมื่อไม่จำกัด (head/exec/admin)
+ * คืน array id นักเรียนที่อยู่ในความดูแล (อาจว่างเปล่า) หรือ null เมื่อไม่จำกัด (head/exec/admin — เห็นภาพรวมทั้งหมด
+ * จึงครอบคลุมกรณีหัวหน้างานแนะแนวที่รับหน้าที่เป็นครูที่ปรึกษาเองด้วย)
  *
- * จับคู่หลักผ่าน student_groups: users.people_id === student_groups.teacher_idcard (เลขบัตรประชาชน
- * เป็น namespace เดียวกันทั้งสองชุดข้อมูลจาก RMS) แม่นยำกว่าการเทียบชื่อ เพราะชื่อใน users อาจมีคำนำหน้า/ยศ
- * ที่ไม่ตรงกับ student_groups.teacher_name เป๊ะ ๆ
- * ถ้าบัญชีไม่มี people_id (สร้างเองในระบบ ไม่ได้มาจาก RMS) จึงย้อนกลับไปจับคู่ด้วยชื่อกับ students.advisor_name แทน
+ * จับคู่ด้วย "เลขบัตรประชาชน 13 หลัก" เท่านั้น (users.people_id === student_groups.teacher_idcard)
+ * ไม่ใช้ชื่อเป็นตัวเชื่อม เพราะชื่อใน users อาจมีคำนำหน้า/ยศที่ไม่ตรงกับ student_groups.teacher_name เป๊ะ ๆ
+ * ถ้าบัญชียังไม่ได้ตั้งเลขบัตรประชาชน (ผู้ดูแลตั้งค่าได้ที่หน้า "ผู้ใช้ระบบ") จะยังไม่เห็นนักเรียนคนใดเลย
  */
 function teacher_scope_ids(PDO $pdo): ?array
 {
     $u = Auth::user();
     if (!$u || $u['role'] !== 'teacher') { return null; }
+    if (empty($u['people_id'])) { return []; }
 
-    if (!empty($u['people_id'])) {
-        $st = $pdo->prepare(
-            'SELECT DISTINCT s.id FROM students s
-             JOIN student_groups sg ON sg.group_code = s.group_code
-             WHERE sg.teacher_idcard = ?'
-        );
-        $st->execute([$u['people_id']]);
-        $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
-        if ($ids) { return $ids; }
-    }
-
-    $st = $pdo->prepare('SELECT id FROM students WHERE advisor_name = ?');
-    $st->execute([$u['full_name']]);
+    $st = $pdo->prepare(
+        'SELECT DISTINCT s.id FROM students s
+         JOIN student_groups sg ON sg.group_code = s.group_code
+         WHERE sg.teacher_idcard = ?'
+    );
+    $st->execute([$u['people_id']]);
     return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 }
 
