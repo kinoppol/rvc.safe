@@ -89,7 +89,7 @@ final class Rms
     public static function syncPeople(PDO $pdo): array
     {
         $rows = self::fetch('data=people');
-        $created = 0; $updated = 0; $seen = [];
+        $created = 0; $updated = 0; $seen = []; $avatars = 0;
 
         $find = $pdo->prepare('SELECT id FROM users WHERE people_id = ? OR username = ? LIMIT 1');
         $ins  = $pdo->prepare(
@@ -116,7 +116,18 @@ final class Rms
             } else {
                 $pass = trim((string)($p['ath_pass'] ?? '')) ?: $pid;
                 $ins->execute([$pid, $pid, password_hash($pass, PASSWORD_DEFAULT), $name, $email]);
+                $id = (int)$pdo->lastInsertId();
                 $created++;
+            }
+
+            // รูปโปรไฟล์: {rms_base_url}/files/{people_pic} — ผู้ใช้ที่ไม่มีรูปยังคงใช้ชื่อย่อตามเดิม
+            $pic = trim((string)($p['people_pic'] ?? ''));
+            if ($pic !== '' && $id) {
+                $path = self::downloadAvatar($pic, (int)$id);
+                if ($path !== null) {
+                    $pdo->prepare('UPDATE users SET avatar_path = ? WHERE id = ?')->execute([$path, $id]);
+                    $avatars++;
+                }
             }
         }
 
@@ -132,7 +143,56 @@ final class Rms
             $deactivated = $st->rowCount();
         }
 
-        return ['created' => $created, 'updated' => $updated, 'deactivated' => $deactivated, 'fetched' => count($rows)];
+        return ['created' => $created, 'updated' => $updated, 'deactivated' => $deactivated, 'avatars' => $avatars, 'fetched' => count($rows)];
+    }
+
+    /**
+     * ดาวน์โหลดรูปโปรไฟล์จาก {rms_base_url}/files/{picName} มาเก็บไว้ในระบบ (assets/avatars/)
+     * คืน path แบบสัมพัทธ์เมื่อสำเร็จ หรือ null เมื่อดาวน์โหลด/ตรวจสอบไฟล์ไม่ผ่าน (ไม่ทำให้ sync ทั้งชุดล้มเหลว)
+     */
+    private static function downloadAvatar(string $picName, int $userId): ?string
+    {
+        $base = self::baseUrl();
+        if ($base === '') { return null; }
+        $url = $base . '/files/' . ltrim($picName, '/');
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_RANGE          => '0-5242879', // จำกัดขนาดไม่เกิน ~5MB
+        ]);
+        $bin  = curl_exec($ch);
+        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $ok   = $bin !== false && curl_errno($ch) === 0;
+        curl_close($ch);
+
+        if (!$ok || !is_string($bin) || $bin === '' || $http >= 400 || strlen($bin) > 5 * 1024 * 1024) {
+            return null;
+        }
+
+        $info = @getimagesizefromstring($bin);
+        if (!$info) { return null; } // ไม่ใช่ไฟล์ภาพจริง
+        $ext = match ($info['mime'] ?? '') {
+            'image/jpeg' => 'jpg',
+            'image/png'  => 'png',
+            'image/webp' => 'webp',
+            'image/gif'  => 'gif',
+            default      => null,
+        };
+        if ($ext === null) { return null; }
+
+        $dir = BASE_PATH . '/assets/avatars';
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) { return null; }
+        foreach (glob($dir . "/u{$userId}.*") ?: [] as $old) { @unlink($old); } // ล้างรูปเก่าของผู้ใช้คนนี้ก่อนบันทึกใหม่
+
+        $rel = "assets/avatars/u{$userId}.{$ext}";
+        if (@file_put_contents(BASE_PATH . '/' . $rel, $bin) === false) { return null; }
+        return $rel;
     }
 
     /* ---------------- dateedu → semesters ---------------- */

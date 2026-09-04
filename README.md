@@ -75,7 +75,7 @@ ALTER TABLE visits   ADD INDEX  IF NOT EXISTS idx_visits_created (created_at);
 
 | ชุดข้อมูล RMS | ปลายทาง | กลยุทธ์ |
 |---|---|---|
-| `people` | `users` | upsert ตาม `people_id`/`username` · ผู้ใช้ใหม่ = `role=teacher` · ไม่ทับ role/รหัสผ่านที่แก้เอง · ผู้ที่ออกแล้ว → `is_active=0` (ไม่ลบ) |
+| `people` | `users` | upsert ตาม `people_id`/`username` · ผู้ใช้ใหม่ = `role=teacher` · ไม่ทับ role/รหัสผ่านที่แก้เอง · ผู้ที่ออกแล้ว → `is_active=0` (ไม่ลบ) · ถ้ามี `people_pic` ดาวน์โหลดรูปจาก `{rms_base_url}/files/{people_pic}` มาเก็บที่ `assets/avatars/u{id}.{ext}` ใช้เป็นรูปโปรไฟล์ — ไม่มีรูปยังใช้ชื่อย่อตามเดิม |
 | `dateedu` | `semesters` | upsert ตาม `(year, semester)` · ไม่แตะ `is_current` |
 | `std2018_studentgroup` | `student_groups` | upsert ตาม `(academic_year, semester, group_code)` — ใช้ map นักเรียน → ครูที่ปรึกษา |
 | `std2018_student` | `students` | **แบ่งท่อน 100 + นับก่อน** · upsert ตาม `student_id` (match `code` เดิมได้) · **ไม่ทับ** ที่อยู่/พิกัด/กลุ่มคัดกรองที่กรอกระหว่างเยี่ยม |

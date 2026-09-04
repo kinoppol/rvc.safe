@@ -14,7 +14,7 @@
           <tr>
             <td>
               <div style="display:flex;align-items:center;gap:10px">
-                <span class="avatar" style="width:30px;height:30px;font-size:12px"><?= e(th_initial($u['full_name'])) ?></span>
+                <span class="avatar" style="width:30px;height:30px;font-size:12px"><?= avatar_html($u) ?></span>
                 <div>
                   <strong style="font-size:13px"><?= e($u['full_name']) ?></strong><br>
                   <span class="muted" style="font-size:11px">@<?= e($u['username']) ?><?= $u['email'] ? ' · ' . e($u['email']) : '' ?></span>

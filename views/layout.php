@@ -99,7 +99,7 @@ $titles = [
       </div>
       <span class="realtime"><span class="dot-live"></span>Realtime</span>
       <button class="iconbtn" onclick="rvcTheme()" title="สลับธีม">🌓</button>
-      <div class="avatar"><?= e(mb_substr($user['full_name'] ?? '?', 0, 1)) ?></div>
+      <div class="avatar"><?= $user ? avatar_html($user) : '?' ?></div>
     </header>
 
     <div class="content">

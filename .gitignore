@@ -2,6 +2,8 @@
 /storage/uploads/*
 /storage/logs/*
 !/storage/**/.gitignore
+/assets/avatars/*
+!/assets/avatars/.gitignore
 /vendor/
 *.probe_*
 .DS_Store

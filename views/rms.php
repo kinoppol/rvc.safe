@@ -82,8 +82,8 @@ const COUNTS = <?= json_encode($counts) ?>;
 
 const TRANSFERS = [
   { key:'people',    icon:'👥', title:'บุคลากร (ครูที่ปรึกษา / ผู้ใช้ระบบ)', action:'sync_people',
-    note:'เพิ่มผู้ใช้ใหม่เป็นบทบาท "ครูที่ปรึกษา" · ไม่ทับ role/รหัสผ่านที่แก้เอง · ผู้ที่ออกแล้วถูกปิดใช้งาน (ไม่ลบ)',
-    badges:d => B('เพิ่ม',d.created)+B('อัปเดต',d.updated)+B('ปิดใช้งาน',d.deactivated) },
+    note:'เพิ่มผู้ใช้ใหม่เป็นบทบาท "ครูที่ปรึกษา" · ไม่ทับ role/รหัสผ่านที่แก้เอง · ผู้ที่ออกแล้วถูกปิดใช้งาน (ไม่ลบ) · ดาวน์โหลดรูปโปรไฟล์ให้ (ถ้ามี ไม่มีใช้ชื่อย่อแทน)',
+    badges:d => B('เพิ่ม',d.created)+B('อัปเดต',d.updated)+B('ปิดใช้งาน',d.deactivated)+B('รูปโปรไฟล์',d.avatars) },
   { key:'semesters', icon:'📅', title:'ภาคเรียน', action:'sync_semesters',
     note:'ใช้อ้างอิงภาคเรียนของการเยี่ยม · ไม่แตะค่าภาคเรียนปัจจุบันที่ผู้ดูแลตั้งเอง',
     badges:d => B('เพิ่ม',d.added)+B('อัปเดต',d.updated)+B('ข้าม',d.skipped) },

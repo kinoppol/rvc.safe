@@ -33,6 +33,7 @@ final class Support
             'storage',
             'storage/uploads',
             'storage/logs',
+            'assets/avatars',
         ];
     }
 

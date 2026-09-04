@@ -123,6 +123,16 @@ function risk_pill(string $r): string
     return ['กลุ่มปกติ' => 'ok', 'กลุ่มเสี่ยง' => 'warn', 'กลุ่มมีปัญหา' => 'danger'][$r] ?? 'muted';
 }
 
+/** ไอคอนโปรไฟล์: ใช้รูปที่ดาวน์โหลดจาก RMS ถ้ามี ไม่งั้น fallback เป็นชื่อย่อ */
+function avatar_html(array $u): string
+{
+    $path = $u['avatar_path'] ?? null;
+    if ($path && is_file(BASE_PATH . '/' . $path)) {
+        return '<img src="' . e($path) . '" alt="" class="avatar-img">';
+    }
+    return e(th_initial($u['full_name'] ?? '?'));
+}
+
 function th_initial(string $name): string
 {
     return mb_substr(preg_replace('/^(นางสาว|นาย|นาง|เด็กชาย|เด็กหญิง)/u', '', $name), 0, 1) ?: '?';
