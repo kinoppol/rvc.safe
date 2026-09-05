@@ -98,7 +98,10 @@ final class Sso
     }
 
     /**
-     * หาบัญชีในระบบนี้ที่ผูกกับผู้ใช้ ONE-RVC นี้อยู่แล้ว, เชื่อมกับบัญชีเดิมด้วยอีเมล, หรือสร้างใหม่
+     * เลขบัตรประชาชน 13 หลัก (national_id) เป็นข้อมูลบังคับสำหรับเข้าสู่ระบบนี้ผ่าน ONE-RVC —
+     * ปฏิเสธถ้าไม่มี, ถ้ามีใช้จับคู่กับ users.people_id (ค่าเดียวกับที่ RMS sync/แอดมินตั้งไว้)
+     * เป็นหลักเสมอ ไม่อิงตัวตนภายในของ ONE-RVC (sso_user_id) หรืออีเมลอีกต่อไป — กันสร้างบัญชีซ้ำ
+     * สำหรับคนคนเดียวกันที่มีอยู่แล้วในระบบ (เช่น จากการซิงก์ RMS มาก่อน)
      * ไม่แตะ role ของบัญชีที่มีอยู่แล้ว — บัญชีใหม่เริ่มเป็น 'teacher' เสมอ (ผู้ดูแลปรับสิทธิ์ภายหลังได้)
      */
     public static function findOrCreateUser(PDO $pdo, array $ssoUser): array
@@ -108,36 +111,34 @@ final class Sso
             throw new RuntimeException('ข้อมูลผู้ใช้จาก ONE-RVC ไม่สมบูรณ์ (ไม่มี id)');
         }
 
+        $nationalId = preg_replace('/\D/', '', (string)($ssoUser['national_id'] ?? ''));
+        if ($nationalId === '' || strlen($nationalId) !== 13) {
+            throw new RuntimeException(
+                'บัญชี ONE-RVC นี้ไม่มีเลขบัตรประชาชน 13 หลักส่งมาให้ระบบนี้ ซึ่งจำเป็นสำหรับเข้าสู่ระบบ ' .
+                'กรุณาติดต่อผู้ดูแล ONE-RVC ให้เปิดสิทธิ์ส่งข้อมูลเลขบัตรประชาชน (national_id) ให้แอปนี้'
+            );
+        }
+
         $name  = trim(trim((string)($ssoUser['first_name'] ?? '')) . ' ' . trim((string)($ssoUser['last_name'] ?? '')));
         $dept  = self::nz($ssoUser['department'] ?? null);
         $email = self::nz($ssoUser['email'] ?? null);
         $uname = self::nz($ssoUser['username'] ?? null);
 
-        // 1) เคยล็อกอินผ่าน ONE-RVC มาก่อน
-        $st = $pdo->prepare('SELECT * FROM users WHERE sso_user_id = ? LIMIT 1');
-        $st->execute([$ssoId]);
+        // 1) มีผู้ใช้ในระบบที่ผูกเลขบัตรประชาชนนี้ไว้แล้วหรือยัง (เช่น จากการซิงก์ RMS หรือแอดมินตั้งเอง)
+        $st = $pdo->prepare('SELECT * FROM users WHERE people_id = ? LIMIT 1');
+        $st->execute([$nationalId]);
         if ($u = $st->fetch()) {
             $pdo->prepare(
-                'UPDATE users SET full_name = ?, department = COALESCE(?, department), email = COALESCE(?, email) WHERE id = ?'
-            )->execute([$name !== '' ? $name : $u['full_name'], $dept, $email, $u['id']]);
-            $u['full_name'] = $name !== '' ? $name : $u['full_name'];
+                'UPDATE users SET sso_user_id = ?, full_name = ?, department = COALESCE(?, department),
+                    email = COALESCE(?, email), is_active = 1 WHERE id = ?'
+            )->execute([$ssoId, $name !== '' ? $name : $u['full_name'], $dept, $email, $u['id']]);
+            $u['full_name']   = $name !== '' ? $name : $u['full_name'];
+            $u['sso_user_id'] = $ssoId;
             return $u;
         }
 
-        // 2) เชื่อมกับบัญชีที่เคยสร้างด้วยมือ (ยังไม่เคยผูก SSO) ถ้าอีเมลตรงกัน
-        if ($email) {
-            $st = $pdo->prepare('SELECT * FROM users WHERE email = ? AND sso_user_id IS NULL LIMIT 1');
-            $st->execute([$email]);
-            if ($u = $st->fetch()) {
-                $pdo->prepare(
-                    'UPDATE users SET sso_user_id = ?, full_name = ?, department = COALESCE(?, department), is_active = 1 WHERE id = ?'
-                )->execute([$ssoId, $name !== '' ? $name : $u['full_name'], $dept, $u['id']]);
-                $u['sso_user_id'] = $ssoId;
-                return $u;
-            }
-        }
-
-        // 3) สร้างบัญชีใหม่ — ไม่มีรหัสผ่านที่ใช้ล็อกอินได้จริง (เข้าได้ทาง SSO เท่านั้น)
+        // 2) ยังไม่มีผู้ใช้ที่ผูกเลขบัตรนี้ — สร้างบัญชีใหม่ พร้อมบันทึกเลขบัตรประชาชนไว้ทันที
+        //    (ไม่มีรหัสผ่านที่ใช้ล็อกอินได้จริง — เข้าได้ทาง SSO เท่านั้น)
         $base = $uname ?: ('onerdc_' . $ssoId);
         $candidate = $base;
         $i = 1;
@@ -150,10 +151,10 @@ final class Sso
 
         $lockedPassword = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
         $ins = $pdo->prepare(
-            'INSERT INTO users (username, sso_user_id, password_hash, full_name, email, department, role, is_active, created_at)
-             VALUES (?,?,?,?,?,?,\'teacher\',1,NOW())'
+            'INSERT INTO users (username, people_id, sso_user_id, password_hash, full_name, email, department, role, is_active, created_at)
+             VALUES (?,?,?,?,?,?,?,\'teacher\',1,NOW())'
         );
-        $ins->execute([$candidate, $ssoId, $lockedPassword, $name !== '' ? $name : $candidate, $email, $dept]);
+        $ins->execute([$candidate, $nationalId, $ssoId, $lockedPassword, $name !== '' ? $name : $candidate, $email, $dept]);
 
         $id = (int)$pdo->lastInsertId();
         $st = $pdo->prepare('SELECT * FROM users WHERE id = ?');
