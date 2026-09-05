@@ -117,6 +117,14 @@ $hiddenFilters = fn() =>
                     </button>
                   </form>
                 <?php endif; ?>
+                <form method="post" action="index.php?r=users" style="display:inline">
+                  <?= csrf_field() ?><?= $hiddenFilters() ?>
+                  <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
+                  <button class="btn danger sm" name="action" value="delete"
+                    onclick="return confirm('ลบผู้ใช้ &quot;<?= e($u['full_name']) ?>&quot; ถาวรใช่หรือไม่?\nข้อมูลจะหายไปเลย ไม่สามารถกู้คืนได้ (ถ้าแค่ต้องการห้ามเข้าระบบชั่วคราว ให้ใช้ \'ปิดใช้งาน\' แทน)')">
+                    🗑️ ลบ
+                  </button>
+                </form>
               <?php else: ?>
                 <span class="muted" style="font-size:11.5px">คุณ</span>
               <?php endif; ?>

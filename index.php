@@ -431,6 +431,31 @@ if ($r === 'users') {
             redirect($backUrl);
         }
 
+        // ลบผู้ใช้ถาวร (ต่างจากปิดใช้งาน) — ใช้ตอนต้องเอาข้อมูลครูที่ปรึกษาที่ผิด/ซ้ำ/เลิกใช้แล้วออกจากระบบจริง ๆ
+        if ($action === 'delete') {
+            $targetId = (int)($_POST['id'] ?? 0);
+            if ($targetId === (int)$me['id']) {
+                flash('ไม่สามารถลบบัญชีของตัวเองได้', 'err');
+                redirect($backUrl);
+            }
+            $st = $pdo->prepare('SELECT role, full_name FROM users WHERE id = ?');
+            $st->execute([$targetId]);
+            $target = $st->fetch();
+            if ($target) {
+                if ($target['role'] === 'admin') {
+                    $adminLeft = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1")->fetchColumn();
+                    if ($adminLeft <= 1) {
+                        flash('ไม่สามารถลบผู้ดูแลระบบคนสุดท้ายได้', 'err');
+                        redirect($backUrl);
+                    }
+                }
+                $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$targetId]);
+                activity_log($pdo, 'ลบผู้ใช้ ' . $target['full_name'] . ' (#' . $targetId . ') ออกจากระบบถาวร');
+                flash('ลบผู้ใช้เรียบร้อยแล้ว', 'ok');
+            }
+            redirect($backUrl);
+        }
+
         // ผู้ดูแลแก้ไขบทบาทผู้ใช้ได้ (เช่น เลื่อนเป็นหัวหน้างานแนะแนว โดยยังทำหน้าที่ครูที่ปรึกษาได้ต่อ
         // เพราะ head/exec/admin เห็นภาพรวมทั้งหมดอยู่แล้ว ครอบคลุมงานครูที่ปรึกษาในตัว)
         if ($action === 'set_role') {
