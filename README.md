@@ -59,13 +59,23 @@ ALTER TABLE visits   ADD INDEX  IF NOT EXISTS idx_visits_created (created_at);
 
 **Flow**
 1. `index.php?r=sso_login` — สุ่ม `state` เก็บใน session แล้ว redirect ไปที่ authorize endpoint ของ ONE-RVC พร้อม `client_id`, `redirect_uri`, `state`
-2. ผู้ใช้ล็อกอินที่ ONE-RVC (รหัสผ่าน + OTP ถ้าเปิดใช้) แล้วถูก POST กลับมาที่ **`web/api/callback.php`** — URL คงที่ตรงกับ `redirect_uri` ที่ลงทะเบียนไว้ ห้ามย้ายไฟล์นี้
-3. `web/api/callback.php` ตรวจ `state` ให้ตรงกับที่เก็บไว้ (กัน CSRF) — ถ้าไม่ได้เก็บ state ไว้เลยและ POST มาไม่มี state ถือเป็น IdP-initiated login ที่ยอมรับได้ (ด่านความปลอดภัยหลักอยู่ที่ข้อ 4)
+2. ผู้ใช้ล็อกอินที่ ONE-RVC (รหัสผ่าน + OTP ถ้าเปิดใช้) แล้วถูก POST กลับมาที่ **`api/callback.php`** — URL คงที่ตรงกับ `redirect_uri` ที่ลงทะเบียนไว้ ห้ามย้ายไฟล์นี้
+3. `api/callback.php` ตรวจ `state` ให้ตรงกับที่เก็บไว้ (กัน CSRF) — ถ้าไม่ได้เก็บ state ไว้เลยและ POST มาไม่มี state ถือเป็น IdP-initiated login ที่ยอมรับได้ (ด่านความปลอดภัยหลักอยู่ที่ข้อ 4)
 4. เรียก `Sso::verifyToken()` → POST `token_id`/`token_key` ไปที่ verify endpoint ของ ONE-RVC **จากฝั่งเซิร์ฟเวอร์เท่านั้น** ไม่เชื่อค่าจาก client เด็ดขาด
 5. ได้ `{"valid":true}` → `Sso::findOrCreateUser()` จับคู่/สร้างบัญชีในตาราง `users` (ผูกด้วย `sso_user_id`, เชื่อมบัญชีเดิมด้วยอีเมลถ้ามี, บัญชีใหม่เริ่มเป็น `role=teacher` และไม่มีรหัสผ่านที่ใช้ล็อกอินตรงได้ — เข้าได้ทาง SSO เท่านั้น) แล้ว `Auth::loginAs()` สร้าง session ของระบบนี้เอง
 
-**การตั้งค่า** อยู่ใน `config/sso` (ผสานจาก `config/config.sample.php` เข้ากับ `config/config.php` อัตโนมัติ ไม่ต้องติดตั้งซ้ำ):
-`authorize_endpoint`, `verify_endpoint`, `client_id`, `redirect_uri` — ค่าที่ให้มาลงทะเบียนไว้ตายตัวแล้ว ห้ามแก้
+**การตั้งค่า** ค่าเริ่มต้นอยู่ใน `config/sso` (ผสานจาก `config/config.sample.php` เข้ากับ `config/config.php` อัตโนมัติ
+ไม่ต้องติดตั้งซ้ำ) ส่วน `authorize_endpoint`, `verify_endpoint`, `client_id` ผู้ดูแลปรับได้จากเมนู **"ตั้งค่า SSO"**
+ในระบบ (เก็บ override ไว้ใน `settings`) — มีประโยชน์เมื่อเซิร์ฟเวอร์นี้เข้าโดเมนสาธารณะของ ONE-RVC จากฝั่งเซิร์ฟเวอร์
+ไม่ได้ (เช่นอยู่เครือข่ายภายในเดียวกัน) ต้องเรียก `verify_endpoint` ด้วย private IP แทน ในขณะที่ `authorize_endpoint`
+ต้องเป็นโดเมนสาธารณะเสมอเพราะเบราว์เซอร์ผู้ใช้เป็นคน redirect ไป — ส่วน `redirect_uri` แก้ผ่าน UI ไม่ได้โดยเจตนา
+เพราะต้องตรงกับที่ลงทะเบียนไว้เป๊ะทุกตัวอักษร
+
+> ⚠️ **หมายเหตุการ deploy**: เซิร์ฟเวอร์ production นี้ deploy ด้วย `git reset --hard` ทั้ง repo ไปที่โฟลเดอร์
+> `/var/www/web` ซึ่งตัวโฟลเดอร์นี้เองถูกเสิร์ฟที่ `https://safe.rvc.ac.th/web/` (ไม่ใช่ที่ root ของโดเมน)
+> ดังนั้น path บน URL จริง = `web/` + path สัมพัทธ์จาก root ของ repo เสมอ — ไฟล์ที่ตำแหน่ง repo-relative
+> `api/callback.php` จึงไปโผล่ที่ `https://safe.rvc.ac.th/web/api/callback.php` พอดี **ห้ามสร้างโฟลเดอร์ `web/`
+> ซ้ำในตัว repo เอง** เพราะจะกลายเป็น `.../web/web/...` ผิดตำแหน่งกับ `redirect_uri` ที่ลงทะเบียนไว้
 
 **เคสที่จัดการ:** ผู้ใช้กด "ไม่อนุญาต" (`GET ?error=...` → กลับหน้าล็อกอินอย่างสุภาพ), `state` ไม่ตรง (`400`), โทเคนหมดอายุ/ไม่ถูกต้อง (`401`), verify endpoint ล่มหรือ timeout (`401`, ไม่ค้างหน้าเว็บเกิน 10 วินาที) — ไม่มีจุดใดเขียน `token_id`/`token_key` ลง log
 
@@ -117,7 +127,7 @@ src/
   Rms.php                โอนข้อมูลจากระบบ RMS (people / dateedu / studentgroup / student)
   Sso.php                เข้าสู่ระบบผ่าน ONE-RVC (authorize URL, verify token, จับคู่/สร้างผู้ใช้)
   bootstrap.php / helpers.php
-web/api/callback.php     redirect_uri ของ ONE-RVC SSO (URL คงที่ ห้ามย้าย)
+api/callback.php         redirect_uri ของ ONE-RVC SSO (URL คงที่ ห้ามย้าย — ดูหมายเหตุเรื่อง deploy ด้านล่าง)
 migrations/
   0001_core_schema.sql   ตารางหลัก
   0002_visit_indexes.sql ดัชนี

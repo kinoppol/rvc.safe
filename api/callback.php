@@ -4,15 +4,18 @@ declare(strict_types=1);
 /**
  * Callback ของ ONE-RVC SSO — URL นี้ต้องตรงกับ redirect_uri ที่ลงทะเบียนไว้เป๊ะ ๆ:
  *   https://safe.rvc.ac.th/web/api/callback.php
+ * (เซิร์ฟเวอร์ deploy repo นี้ทั้งก้อนไว้ที่ /var/www/web ซึ่งตัว /var/www/web เองถูกเสิร์ฟที่
+ *  https://safe.rvc.ac.th/web/ ดังนั้นไฟล์นี้ต้องอยู่ที่ตำแหน่ง repo-relative "api/callback.php"
+ *  ไม่ใช่ "web/api/callback.php" — ไม่งั้นจะกลายเป็น /web/web/api/callback.php บนเซิร์ฟเวอร์จริง)
  * ห้ามย้ายไฟล์นี้ หรือครอบด้วย router อื่น
  *
  * ⚠️ ห้ามเขียน token_id / token_key ลง log หรือแสดงในข้อความ error ใด ๆ
  */
 
-require dirname(__DIR__, 2) . '/src/bootstrap.php';
+require dirname(__DIR__) . '/src/bootstrap.php';
 
-// เส้นทางกลับสู่แอป (relative จากไฟล์นี้ที่ web/api/callback.php → รากโปรเจกต์)
-const APP_ROOT = '../../';
+// เส้นทางกลับสู่แอป (relative จากไฟล์นี้ที่ api/callback.php → รากโปรเจกต์)
+const APP_ROOT = '../';
 
 function sso_deny(int $code, string $message): never
 {
