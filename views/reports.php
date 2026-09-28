@@ -19,7 +19,12 @@ $cards = [
 <section class="card">
   <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
     <strong style="font-size:14.5px">รายงานรอตรวจสอบ / ลงนาม</strong>
-    <span class="muted" style="font-size:11.5px"><?= e(Auth::ROLES[$role] ?? '') ?></span>
+    <span style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+      <span class="muted" style="font-size:11.5px"><?= e(Auth::ROLES[$role] ?? '') ?></span>
+      <a class="btn sec sm" href="index.php?r=reports&amp;export=xlsx&amp;status=pending">Excel: รอดำเนินการ</a>
+      <a class="btn sec sm" href="index.php?r=reports&amp;export=xlsx&amp;status=done">Excel: ลงนามแล้ว</a>
+      <a class="btn sec sm" href="index.php?r=reports&amp;export=xlsx&amp;status=all">Excel: ทั้งหมด</a>
+    </span>
   </div>
   <div>
     <?php foreach ($pending as $r): ?>

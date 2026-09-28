@@ -19,6 +19,7 @@ require BASE_PATH . '/src/Auth.php';
 require BASE_PATH . '/src/helpers.php';
 require BASE_PATH . '/src/Rms.php';
 require BASE_PATH . '/src/Sso.php';
+require BASE_PATH . '/src/Xlsx.php';
 
 function app_config(): array
 {

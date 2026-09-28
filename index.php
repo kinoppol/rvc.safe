@@ -342,6 +342,32 @@ if ($r === 'reports') {
         }
         redirect('index.php?r=reports');
     }
+    if (($_GET['export'] ?? '') === 'xlsx') {
+        $filters = [
+            'pending' => ["'รอตรวจสอบ','ผ่านหัวหน้างาน'", 'รอดำเนินการ'],
+            'done'    => ["'ลงนามแล้ว'", 'ลงนามแล้ว'],
+            'all'     => [null, 'ทั้งหมด'],
+        ];
+        [$in, $label] = $filters[$_GET['status'] ?? 'pending'] ?? $filters['pending'];
+        $rows = $pdo->query(
+            "SELECT v.*, s.student_code, s.prefix, s.full_name, s.level, s.room, s.department, s.advisor_name, s.risk_group
+             FROM visits v JOIN students s ON s.id = v.student_id"
+            . ($in ? " WHERE v.status IN ($in)" : '')
+            . ' ORDER BY v.urgent DESC, v.updated_at DESC'
+        )->fetchAll();
+        $out = [['ลำดับ', 'รหัสนักศึกษา', 'ชื่อ-สกุล', 'ระดับชั้น', 'ห้อง', 'สาขาวิชา', 'ครูที่ปรึกษา',
+                 'ภาคเรียน', 'รอบ', 'วันที่เยี่ยม', 'วิธีการ', 'กลุ่มเสี่ยง', 'ผลคัดกรอง', 'เร่งด่วน',
+                 'เงินช่วยเหลือ', 'สถานะ', 'สรุป', 'ปรับปรุงล่าสุด']];
+        foreach ($rows as $i => $v) {
+            $out[] = [$i + 1, $v['student_code'], ($v['prefix'] ?? '') . $v['full_name'], $v['level'], $v['room'],
+                $v['department'], $v['advisor_name'] ?: $v['advisor'], $v['term'], $v['round'], $v['visit_date'],
+                $v['method'], $v['risk_group'], $v['screen_result'], $v['urgent'] ? 'ใช่' : '',
+                $v['help_amount'] !== null ? (float)$v['help_amount'] : null, $v['status'], $v['summary'], $v['updated_at']];
+        }
+        activity_log($pdo, 'ส่งออกรายงาน Excel (' . $label . ')');
+        Xlsx::download('รายงานเยี่ยมบ้าน-' . $label . '-' . date('Ymd') . '.xlsx', 'รายงาน', $out);
+        exit;
+    }
     $pending = $pdo->query(
         "SELECT v.*, s.full_name, s.prefix, s.level, s.department, s.room, s.advisor_name, s.risk_group
          FROM visits v JOIN students s ON s.id = v.student_id
