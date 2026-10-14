@@ -62,7 +62,9 @@ ALTER TABLE visits   ADD INDEX  IF NOT EXISTS idx_visits_created (created_at);
 2. ผู้ใช้ล็อกอินที่ ONE-RVC (รหัสผ่าน + OTP ถ้าเปิดใช้) แล้วถูก POST กลับมาที่ **`api/callback.php`** — URL คงที่ตรงกับ `redirect_uri` ที่ลงทะเบียนไว้ ห้ามย้ายไฟล์นี้
 3. `api/callback.php` ตรวจ `state` ให้ตรงกับที่เก็บไว้ (กัน CSRF) — ถ้าไม่ได้เก็บ state ไว้เลยและ POST มาไม่มี state ถือเป็น IdP-initiated login ที่ยอมรับได้ (ด่านความปลอดภัยหลักอยู่ที่ข้อ 4)
 4. เรียก `Sso::verifyToken()` → POST `token_id`/`token_key` ไปที่ verify endpoint ของ ONE-RVC **จากฝั่งเซิร์ฟเวอร์เท่านั้น** ไม่เชื่อค่าจาก client เด็ดขาด
-5. ได้ `{"valid":true}` → `Sso::findOrCreateUser()` จับคู่/สร้างบัญชีในตาราง `users` (ผูกด้วย `sso_user_id`, เชื่อมบัญชีเดิมด้วยอีเมลถ้ามี, บัญชีใหม่เริ่มเป็น `role=teacher` และไม่มีรหัสผ่านที่ใช้ล็อกอินตรงได้ — เข้าได้ทาง SSO เท่านั้น) แล้ว `Auth::loginAs()` สร้าง session ของระบบนี้เอง
+5. ได้ `{"valid":true}` → `Sso::findOrCreateUser()` (บังคับมีเลขบัตรประชาชน) ใช้ `Sso::resolveUser()` จับคู่บัญชีด้วย `people_id` = เลขบัตรประชาชนก่อน แล้วด้วย `sso_user_id` = id ของ RVC-ONE (ตัวเดียวกับที่ใช้ซิงก์รายชื่อ) ไม่เจอจึงสร้างบัญชีใหม่ `role=teacher` ที่ไม่มีรหัสผ่านใช้ได้จริง — แล้ว `Auth::loginAs()` สร้าง session ของระบบนี้เอง
+
+**URL เริ่ม SSO ของแอป** (ให้ผู้ดูแล RVC-ONE กรอกที่หน้าแก้ไขแอป เพื่อให้ไทล์ใน Workspace เข้าระบบได้คลิกเดียว): `https://safe.rvc.ac.th/web/index.php?r=sso_login`
 
 **การตั้งค่า** ค่าเริ่มต้นอยู่ใน `config/sso` (ผสานจาก `config/config.sample.php` เข้ากับ `config/config.php` อัตโนมัติ
 ไม่ต้องติดตั้งซ้ำ) ส่วน `authorize_endpoint`, `verify_endpoint`, `client_id` ผู้ดูแลปรับได้จากเมนู **"ตั้งค่า SSO"**
@@ -78,6 +80,16 @@ ALTER TABLE visits   ADD INDEX  IF NOT EXISTS idx_visits_created (created_at);
 > ซ้ำในตัว repo เอง** เพราะจะกลายเป็น `.../web/web/...` ผิดตำแหน่งกับ `redirect_uri` ที่ลงทะเบียนไว้
 
 **เคสที่จัดการ:** ผู้ใช้กด "ไม่อนุญาต" (`GET ?error=...` → กลับหน้าล็อกอินอย่างสุภาพ), `state` ไม่ตรง (`400`), โทเคนหมดอายุ/ไม่ถูกต้อง (`401`), verify endpoint ล่มหรือ timeout (`401`, ไม่ค้างหน้าเว็บเกิน 10 วินาที) — ไม่มีจุดใดเขียน `token_id`/`token_key` ลง log
+
+## ซิงก์รายชื่อผู้ใช้จาก RVC-ONE (User-sync API)
+
+`src/OaSync.php` ดึงครู/บุคลากร (`type=staff`) จาก `http://workspace.rvc.ac.th/oa/api/users.php` แบบ server-to-server ด้วย HTTP Basic (`client_id:client_secret`)
+
+- **client_secret ห้าม commit** — ตั้งได้ 3 ทาง (ลำดับความสำคัญ): env `OA_CLIENT_SECRET` → `user_sync.client_secret` ใน `config/config.php` ของเซิร์ฟเวอร์ → กรอกในหน้า **"ตั้งค่า SSO"** (เก็บใน `settings`, ไม่แสดงค่ากลับ)
+- upsert ด้วย id ของ RVC-ONE ใน `users.sso_user_id` (จับคู่ด้วยเลขบัตรประชาชนก่อนเหมือน SSO), ไม่มีเลขบัตรและยังไม่เคยผูก → ข้าม, `status=suspended` → ปิดใช้งาน (ยกเว้น admin) และเปิดคืนอัตโนมัติเฉพาะที่ปิดเพราะระงับ (`users.oa_status`)
+- `since` เก็บใน `settings.oa_sync_since` = `server_time` ของ API และขยับเมื่อครบทุกหน้าเท่านั้น; `bad_cursor` → เริ่มใหม่จากหน้าแรก; timeout 30 วินาที retry 3 ครั้งเมื่อเครือข่ายล้ม/5xx; ล็อก `GET_LOCK` กันรันซ้อน; log จำนวนต่อรอบที่ `storage/logs/oa-sync.log`
+- รันเอง: ปุ่ม "ซิงก์ตอนนี้" / "ซิงก์ทั้งหมดใหม่" ในหน้าตั้งค่า SSO หรือ `php bin/oa-sync.php [--full]`
+- ตั้ง cron บนเซิร์ฟเวอร์: `*/30 * * * * php /var/www/web/bin/oa-sync.php > /dev/null 2>&1`
 
 ## โอนข้อมูลจากระบบ RMS (เฉพาะผู้ดูแล)
 
@@ -125,9 +137,11 @@ src/
   Migrator.php           ตัวจัดการ migration
   Auth.php               การยืนยันตัวตน + สิทธิ์ตามบทบาท
   Rms.php                โอนข้อมูลจากระบบ RMS (people / dateedu / studentgroup / student)
+  OaSync.php             ซิงก์รายชื่อผู้ใช้จาก RVC-ONE (User-sync API)
   Sso.php                เข้าสู่ระบบผ่าน ONE-RVC (authorize URL, verify token, จับคู่/สร้างผู้ใช้)
   bootstrap.php / helpers.php
 api/callback.php         redirect_uri ของ ONE-RVC SSO (URL คงที่ ห้ามย้าย — ดูหมายเหตุเรื่อง deploy ด้านล่าง)
+bin/oa-sync.php          สคริปต์ cron ซิงก์ผู้ใช้จาก RVC-ONE (CLI เท่านั้น, เว็บเข้าไม่ได้ด้วย .htaccess)
 migrations/
   0001_core_schema.sql   ตารางหลัก
   0002_visit_indexes.sql ดัชนี
@@ -135,6 +149,7 @@ migrations/
   0004_guardian_contact.sql   (ตัวอย่าง) ข้อมูลติดต่อผู้ปกครอง
   0005_rms_integration.sql    ตาราง/คอลัมน์สำหรับเชื่อม RMS
   0006_sso_onerdc.sql         คอลัมน์ sso_user_id สำหรับเชื่อม ONE-RVC
+  0010_oa_user_sync.sql       คอลัมน์ oa_status / oa_synced_at สำหรับซิงก์ผู้ใช้จาก RVC-ONE
 views/                   เทมเพลต (layout + หน้าแต่ละหน้า)
 assets/app.css           สไตล์ (โทนสีจากแบบต้นฉบับ Claude Design, รองรับ light/dark)
 storage/uploads|logs     ต้องเขียนได้

@@ -25,4 +25,13 @@ return [
         'client_id'          => 'cl_e433b702f6',
         'redirect_uri'       => 'https://safe.rvc.ac.th/web/api/callback.php',
     ],
+    // ซิงก์รายชื่อผู้ใช้จาก RVC-ONE (User-sync API, server-to-server) — ใช้ client_id เดียวกับ sso ข้างบน
+    // client_secret ห้าม commit: ตั้งผ่าน env OA_CLIENT_SECRET, ใส่ใน config/config.php ของเซิร์ฟเวอร์
+    // หรือกรอกที่หน้า "ตั้งค่า SSO" (เก็บใน settings) — ลำดับความสำคัญตามนี้
+    'user_sync' => [
+        'endpoint'      => 'http://workspace.rvc.ac.th/oa/api/users.php',
+        'client_secret' => '',
+        'type'          => 'staff',   // staff | student | all — ระบบนี้ใช้เฉพาะครู/บุคลากรเป็นผู้ใช้
+        'limit'         => 500,
+    ],
 ];

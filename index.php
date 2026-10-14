@@ -621,6 +621,37 @@ if ($r === 'rms') {
 if ($r === 'sso') {
     Auth::requireRole('admin');
 
+    if ($method === 'POST' && in_array($_POST['action'] ?? '', ['save_sync', 'sync_now', 'sync_full'], true)) {
+        csrf_verify();
+        $action = $_POST['action'];
+        if ($action === 'save_sync') {
+            $endpoint = trim($_POST['oa_sync_endpoint'] ?? '');
+            if ($endpoint !== '' && !preg_match('#^https?://#i', $endpoint)) {
+                flash('User-sync endpoint ต้องขึ้นต้นด้วย http:// หรือ https://', 'err');
+                redirect('index.php?r=sso');
+            }
+            set_setting('oa_sync_endpoint', $endpoint);
+            $secret = (string)($_POST['oa_client_secret'] ?? '');
+            if (!empty($_POST['clear_secret'])) {
+                set_setting('oa_client_secret', '');
+            } elseif (trim($secret) !== '') {
+                set_setting('oa_client_secret', trim($secret));
+            }
+            activity_log($pdo, 'อัปเดตการตั้งค่าซิงก์ผู้ใช้จาก RVC-ONE');
+            flash('บันทึกการตั้งค่าซิงก์ผู้ใช้เรียบร้อย', 'ok');
+        } else {
+            try {
+                $res = OaSync::run($pdo, $action === 'sync_full');
+                $summary = "เพิ่ม {$res['created']} อัปเดต {$res['updated']} ระงับ {$res['suspended']} เปิดคืน {$res['reactivated']} ข้าม {$res['skipped']}";
+                activity_log($pdo, "ซิงก์ผู้ใช้จาก RVC-ONE ({$res['mode']}): {$summary}");
+                flash("ซิงก์ผู้ใช้จาก RVC-ONE เสร็จสิ้น ({$res['mode']}): {$summary}", 'ok');
+            } catch (Throwable $e) {
+                flash('ซิงก์ผู้ใช้จาก RVC-ONE ไม่สำเร็จ: ' . $e->getMessage(), 'err');
+            }
+        }
+        redirect('index.php?r=sso');
+    }
+
     if ($method === 'POST') {
         csrf_verify();
         $authorize = trim($_POST['authorize_endpoint'] ?? '');
@@ -646,15 +677,29 @@ if ($r === 'sso') {
         redirect('index.php?r=sso');
     }
 
-    $ssoDefaults = require BASE_PATH . '/config/config.sample.php';
-    $ssoDefaults = $ssoDefaults['sso'] ?? [];
+    $sample = require BASE_PATH . '/config/config.sample.php';
+    $ssoDefaults = $sample['sso'] ?? [];
     $ssoOverride = [
         'authorize_endpoint' => get_setting('sso_authorize_endpoint', ''),
         'verify_endpoint'    => get_setting('sso_verify_endpoint', ''),
         'client_id'          => get_setting('sso_client_id', ''),
     ];
     $ssoEffective = Sso::config();
-    render('sso_settings', compact('ssoDefaults', 'ssoOverride', 'ssoEffective'), 'ตั้งค่า SSO (ONE-RVC)');
+    $ssoStartUrl = Sso::startUrl();
+    $syncCfg = OaSync::config();
+    $syncInfo = [
+        'endpoint_override' => get_setting('oa_sync_endpoint', ''),
+        'endpoint_default'  => (string)($sample['user_sync']['endpoint'] ?? ''),
+        'endpoint'          => $syncCfg['endpoint'],
+        'type'              => $syncCfg['type'],
+        'secret_source'     => OaSync::secretSource(),
+        'since'             => get_setting('oa_sync_since', ''),
+        'last_at'           => get_setting('oa_sync_last_at', ''),
+        'last_result'       => json_decode((string)get_setting('oa_sync_last_result', ''), true) ?: null,
+        'last_error'        => get_setting('oa_sync_last_error', ''),
+        'linked'            => (int)$pdo->query('SELECT COUNT(*) FROM users WHERE sso_user_id IS NOT NULL')->fetchColumn(),
+    ];
+    render('sso_settings', compact('ssoDefaults', 'ssoOverride', 'ssoEffective', 'ssoStartUrl', 'syncInfo'), 'ตั้งค่า SSO (ONE-RVC)');
     exit;
 }
 

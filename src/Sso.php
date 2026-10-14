@@ -99,47 +99,75 @@ final class Sso
 
     /**
      * เลขบัตรประชาชน 13 หลัก (national_id) เป็นข้อมูลบังคับสำหรับเข้าสู่ระบบนี้ผ่าน ONE-RVC —
-     * ปฏิเสธถ้าไม่มี, ถ้ามีใช้จับคู่กับ users.people_id (ค่าเดียวกับที่ RMS sync/แอดมินตั้งไว้)
-     * เป็นหลักเสมอ ไม่อิงตัวตนภายในของ ONE-RVC (sso_user_id) หรืออีเมลอีกต่อไป — กันสร้างบัญชีซ้ำ
-     * สำหรับคนคนเดียวกันที่มีอยู่แล้วในระบบ (เช่น จากการซิงก์ RMS มาก่อน)
-     * ไม่แตะ role ของบัญชีที่มีอยู่แล้ว — บัญชีใหม่เริ่มเป็น 'teacher' เสมอ (ผู้ดูแลปรับสิทธิ์ภายหลังได้)
+     * ปฏิเสธถ้าไม่มี ส่วนการจับคู่/สร้างบัญชีใช้ resolveUser() ร่วมกับการซิงก์รายชื่อผู้ใช้ (OaSync)
+     * บัญชีที่จับคู่ได้จะถูกเปิดใช้งาน (ผู้ใช้ที่ถูกระงับฝั่ง ONE-RVC ล็อกอินที่ ONE-RVC ไม่ได้อยู่แล้ว)
      */
     public static function findOrCreateUser(PDO $pdo, array $ssoUser): array
     {
-        $ssoId = trim((string)($ssoUser['id'] ?? ''));
-        if ($ssoId === '') {
-            throw new RuntimeException('ข้อมูลผู้ใช้จาก ONE-RVC ไม่สมบูรณ์ (ไม่มี id)');
-        }
-
-        $nationalId = preg_replace('/\D/', '', (string)($ssoUser['national_id'] ?? ''));
-        if ($nationalId === '' || strlen($nationalId) !== 13) {
+        if (self::nationalId($ssoUser) === '') {
             throw new RuntimeException(
                 'บัญชี ONE-RVC นี้ไม่มีเลขบัตรประชาชน 13 หลักส่งมาให้ระบบนี้ ซึ่งจำเป็นสำหรับเข้าสู่ระบบ ' .
                 'กรุณาติดต่อผู้ดูแล ONE-RVC ให้เปิดสิทธิ์ส่งข้อมูลเลขบัตรประชาชน (national_id) ให้แอปนี้'
             );
         }
+        [$u] = self::resolveUser($pdo, $ssoUser, true);
+        if (empty($u['is_active'])) {
+            $pdo->prepare('UPDATE users SET is_active = 1 WHERE id = ?')->execute([$u['id']]);
+            $u['is_active'] = 1;
+        }
+        return $u;
+    }
 
-        $name  = trim(trim((string)($ssoUser['first_name'] ?? '')) . ' ' . trim((string)($ssoUser['last_name'] ?? '')));
-        $dept  = self::nz($ssoUser['department'] ?? null);
-        $email = self::nz($ssoUser['email'] ?? null);
-        $uname = self::nz($ssoUser['username'] ?? null);
+    /**
+     * จับคู่ผู้ใช้ ONE-RVC (id จาก verify_token = id จาก User-sync API) กับบัญชีในระบบนี้ แล้วอัปเดตชื่อ/แผนก/อีเมล
+     *   1. users.people_id = เลขบัตรประชาชน (ค่าเดียวกับที่ RMS sync/แอดมินตั้งไว้) — ตัวเทียบหลัก กันบัญชีซ้ำ
+     *   2. users.sso_user_id = id ของ ONE-RVC — กรณีไม่ได้รับสิทธิ์ national_id หรือบัญชีที่ผูกไว้แล้ว
+     *   3. ไม่เจอ และ $allowCreate และมีเลขบัตร → สร้างบัญชีใหม่ role=teacher (ไม่มีรหัสผ่านที่ใช้ได้จริง — เข้าทาง SSO เท่านั้น)
+     * ไม่แตะ role / username / is_active ของบัญชีที่มีอยู่แล้ว (ผู้เรียกจัดการสถานะเอง)
+     * sso_user_id เป็น unique — ถ้า id นี้ไปผูกกับแถวอื่นอยู่ (เช่น บัญชีซ้ำ onerdc_ จากบั๊กเดิม) จะย้ายมาผูกกับแถวที่จับคู่ได้
+     *
+     * @return array{0: ?array, 1: string} [แถว users หรือ null, 'matched'|'created'|'skipped']
+     */
+    public static function resolveUser(PDO $pdo, array $oaUser, bool $allowCreate): array
+    {
+        $oaId = trim((string)($oaUser['id'] ?? ''));
+        if ($oaId === '') {
+            throw new RuntimeException('ข้อมูลผู้ใช้จาก ONE-RVC ไม่สมบูรณ์ (ไม่มี id)');
+        }
+        $nationalId = self::nationalId($oaUser);
+        $name  = trim(trim((string)($oaUser['first_name'] ?? '')) . ' ' . trim((string)($oaUser['last_name'] ?? '')));
+        $dept  = self::nz($oaUser['department'] ?? null);
+        $email = self::nz($oaUser['email'] ?? null);
+        $uname = self::nz($oaUser['username'] ?? null);
 
-        // 1) มีผู้ใช้ในระบบที่ผูกเลขบัตรประชาชนนี้ไว้แล้วหรือยัง (เช่น จากการซิงก์ RMS หรือแอดมินตั้งเอง)
-        $st = $pdo->prepare('SELECT * FROM users WHERE people_id = ? LIMIT 1');
-        $st->execute([$nationalId]);
-        if ($u = $st->fetch()) {
-            $pdo->prepare(
-                'UPDATE users SET sso_user_id = ?, full_name = ?, department = COALESCE(?, department),
-                    email = COALESCE(?, email), is_active = 1 WHERE id = ?'
-            )->execute([$ssoId, $name !== '' ? $name : $u['full_name'], $dept, $email, $u['id']]);
-            $u['full_name']   = $name !== '' ? $name : $u['full_name'];
-            $u['sso_user_id'] = $ssoId;
-            return $u;
+        $u = false;
+        if ($nationalId !== '') {
+            $st = $pdo->prepare('SELECT * FROM users WHERE people_id = ? ORDER BY id LIMIT 1');
+            $st->execute([$nationalId]);
+            $u = $st->fetch();
+        }
+        if (!$u) {
+            $st = $pdo->prepare('SELECT * FROM users WHERE sso_user_id = ? LIMIT 1');
+            $st->execute([$oaId]);
+            $u = $st->fetch();
         }
 
-        // 2) ยังไม่มีผู้ใช้ที่ผูกเลขบัตรนี้ — สร้างบัญชีใหม่ พร้อมบันทึกเลขบัตรประชาชนไว้ทันที
-        //    (ไม่มีรหัสผ่านที่ใช้ล็อกอินได้จริง — เข้าได้ทาง SSO เท่านั้น)
-        $base = $uname ?: ('onerdc_' . $ssoId);
+        if ($u) {
+            if ((string)$u['sso_user_id'] !== $oaId) {
+                $pdo->prepare('UPDATE users SET sso_user_id = NULL WHERE sso_user_id = ? AND id <> ?')->execute([$oaId, $u['id']]);
+            }
+            $pdo->prepare(
+                'UPDATE users SET sso_user_id = ?, people_id = COALESCE(people_id, ?), full_name = ?,
+                    department = COALESCE(?, department), email = COALESCE(?, email) WHERE id = ?'
+            )->execute([$oaId, $nationalId !== '' ? $nationalId : null, $name !== '' ? $name : $u['full_name'], $dept, $email, $u['id']]);
+            return [self::findById($pdo, (int)$u['id']), 'matched'];
+        }
+
+        if (!$allowCreate || $nationalId === '') {
+            return [null, 'skipped'];
+        }
+
+        $base = $uname ?: $nationalId;
         $candidate = $base;
         $i = 1;
         $chk = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = ?');
@@ -150,13 +178,29 @@ final class Sso
         } while (true);
 
         $lockedPassword = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
-        $ins = $pdo->prepare(
+        $pdo->prepare(
             'INSERT INTO users (username, people_id, sso_user_id, password_hash, full_name, email, department, role, is_active, created_at)
              VALUES (?,?,?,?,?,?,?,\'teacher\',1,NOW())'
-        );
-        $ins->execute([$candidate, $nationalId, $ssoId, $lockedPassword, $name !== '' ? $name : $candidate, $email, $dept]);
+        )->execute([$candidate, $nationalId, $oaId, $lockedPassword, $name !== '' ? $name : $candidate, $email, $dept]);
 
-        $id = (int)$pdo->lastInsertId();
+        return [self::findById($pdo, (int)$pdo->lastInsertId()), 'created'];
+    }
+
+    /** URL เริ่ม SSO ของแอปนี้ (route sso_login) — ไว้ให้ผู้ดูแล ONE-RVC กรอกในช่อง "URL เริ่ม SSO ของแอป" */
+    public static function startUrl(): string
+    {
+        $redirect = (string)(self::config()['redirect_uri'] ?? '');
+        return preg_replace('#api/callback\.php$#', 'index.php?r=sso_login', $redirect) ?? '';
+    }
+
+    private static function nationalId(array $oaUser): string
+    {
+        $nid = preg_replace('/\D/', '', (string)($oaUser['national_id'] ?? ''));
+        return strlen($nid) === 13 ? $nid : '';
+    }
+
+    private static function findById(PDO $pdo, int $id): array
+    {
         $st = $pdo->prepare('SELECT * FROM users WHERE id = ?');
         $st->execute([$id]);
         return $st->fetch();

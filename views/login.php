@@ -13,7 +13,7 @@
 
   <?php if (Sso::enabled()): ?>
     <a href="index.php?r=sso_login" class="btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;box-sizing:border-box">
-      🔐 ลงชื่อเข้าใช้ผ่านระบบ ONE-RVC
+      🔐 ลงชื่อเข้าใช้ผ่านระบบ RVC-ONE
     </a>
     <div style="display:flex;align-items:center;gap:10px;margin:18px 0;color:var(--faint);font-size:11.5px">
       <span style="flex:1;height:1px;background:var(--border)"></span>หรือเข้าสู่ระบบด้วยบัญชีในระบบนี้<span style="flex:1;height:1px;background:var(--border)"></span>
