@@ -631,6 +631,13 @@ if ($r === 'rms') {
 /* ---------------- SSO (ONE-RVC) settings (admin) ---------------- */
 if ($r === 'sso') {
     Auth::requireRole('admin');
+    // หลังบันทึก กลับไปแท็บเดิมของหน้าตั้งค่า
+    $ssoBack = 'index.php?r=sso&tab=' . match ($_POST['action'] ?? '') {
+        'save_login_methods'                 => 'login',
+        'save_secret'                        => 'secret',
+        'save_sync', 'sync_now', 'sync_full' => 'sync',
+        default                              => 'connection',
+    };
 
     if ($method === 'POST' && ($_POST['action'] ?? '') === 'save_login_methods') {
         csrf_verify();
@@ -644,7 +651,7 @@ if ($r === 'sso') {
             activity_log($pdo, 'ตั้งวิธีลงชื่อเข้าใช้: ' . Auth::LOGIN_METHODS[$mode]);
             flash('บันทึกวิธีลงชื่อเข้าใช้เรียบร้อย: ' . Auth::LOGIN_METHODS[$mode], 'ok');
         }
-        redirect('index.php?r=sso');
+        redirect($ssoBack);
     }
 
     if ($method === 'POST' && ($_POST['action'] ?? '') === 'save_secret') {
@@ -661,7 +668,7 @@ if ($r === 'sso') {
             activity_log($pdo, 'บันทึก client secret ของ RVC-ONE'); // ห้ามใส่ค่า secret ลง log
             flash('บันทึก client secret เรียบร้อย', 'ok');
         }
-        redirect('index.php?r=sso');
+        redirect($ssoBack);
     }
 
     if ($method === 'POST' && in_array($_POST['action'] ?? '', ['save_sync', 'sync_now', 'sync_full'], true)) {
@@ -671,7 +678,7 @@ if ($r === 'sso') {
             $endpoint = trim($_POST['oa_sync_endpoint'] ?? '');
             if ($endpoint !== '' && !preg_match('#^https?://#i', $endpoint)) {
                 flash('User-sync endpoint ต้องขึ้นต้นด้วย http:// หรือ https://', 'err');
-                redirect('index.php?r=sso');
+                redirect($ssoBack);
             }
             set_setting('oa_sync_endpoint', $endpoint);
             activity_log($pdo, 'อัปเดตการตั้งค่าซิงก์ผู้ใช้จาก RVC-ONE');
@@ -686,7 +693,7 @@ if ($r === 'sso') {
                 flash('ซิงก์ผู้ใช้จาก RVC-ONE ไม่สำเร็จ: ' . $e->getMessage(), 'err');
             }
         }
-        redirect('index.php?r=sso');
+        redirect($ssoBack);
     }
 
     if ($method === 'POST') {
@@ -711,7 +718,7 @@ if ($r === 'sso') {
             activity_log($pdo, 'อัปเดตการตั้งค่า SSO (ONE-RVC)');
             flash('บันทึกการตั้งค่า SSO เรียบร้อย', 'ok');
         }
-        redirect('index.php?r=sso');
+        redirect($ssoBack);
     }
 
     $sample = require BASE_PATH . '/config/config.sample.php';

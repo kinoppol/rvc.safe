@@ -7,6 +7,17 @@ $loginHints = [
     'sso'      => 'ผู้ใช้ทั่วไปเข้าได้ผ่าน RVC-ONE เท่านั้น — หน้าเข้าสู่ระบบจะมีลิงก์ "ผู้ดูแลระบบ: ลงชื่อเข้าใช้ด้วยรหัสผ่าน" ไว้ใช้กรณี RVC-ONE ล่ม (รับเฉพาะบัญชีบทบาทผู้ดูแลระบบ)',
 ];
 ?>
+<?php
+$ssoTabs = ["login" => "วิธีลงชื่อเข้าใช้", "connection" => "การเชื่อมต่อ SSO", "secret" => "Client secret", "sync" => "ซิงก์ผู้ใช้"];
+$activeTab = isset($ssoTabs[$_GET["tab"] ?? ""]) ? $_GET["tab"] : "login";
+?>
+<div class="chips" role="tablist">
+  <?php foreach ($ssoTabs as $k => $label): ?>
+    <a class="chip <?= $activeTab === $k ? "on" : "" ?>" role="tab" data-tab-link="<?= e($k) ?>" href="index.php?r=sso&amp;tab=<?= e($k) ?>"><?= e($label) ?></a>
+  <?php endforeach; ?>
+</div>
+
+<div class="sso-tab" data-tab="login" style="display:flex;flex-direction:column;gap:16px" <?= $activeTab === "login" ? "" : "hidden" ?>>
 <section class="card pad" style="display:flex;flex-direction:column;gap:10px">
   <strong style="font-size:15px">วิธีลงชื่อเข้าใช้ระบบ</strong>
   <form method="post" action="index.php?r=sso" style="display:flex;flex-direction:column;gap:10px">
@@ -27,6 +38,9 @@ $loginHints = [
   </form>
 </section>
 
+</div>
+
+<div class="sso-tab" data-tab="secret" style="display:flex;flex-direction:column;gap:16px" <?= $activeTab === "secret" ? "" : "hidden" ?>>
 <section class="card pad" style="display:flex;flex-direction:column;gap:10px">
   <strong style="font-size:15px">Client secret ของ RVC-ONE</strong>
   <table class="data">
@@ -55,6 +69,9 @@ $loginHints = [
   </form>
 </section>
 
+</div>
+
+<div class="sso-tab" data-tab="connection" style="display:flex;flex-direction:column;gap:16px" <?= $activeTab === "connection" ? "" : "hidden" ?>>
 <section class="card pad" style="display:flex;flex-direction:column;gap:10px">
   <strong style="font-size:15px">ตั้งค่าการเชื่อมต่อ ONE-RVC (SSO)</strong>
   <p class="muted" style="font-size:12.5px;margin:0">
@@ -117,9 +134,12 @@ $loginHints = [
   <p class="muted" style="font-size:12.5px;margin:0">
     ให้ผู้ดูแล RVC-ONE นำ URL นี้ไปกรอกในช่อง “URL เริ่ม SSO ของแอป” ที่หน้าแก้ไขแอป เพื่อให้ไทล์ในหน้า Workspace พาผู้ใช้เข้าระบบนี้ได้ในคลิกเดียว
   </p>
-  <input type="text" value="<?= e($ssoStartUrl) ?>" readonly onclick="this.select()">
+  <label class="field"><input type="text" value="<?= e($ssoStartUrl) ?>" readonly onclick="this.select()"></label>
 </section>
 
+</div>
+
+<div class="sso-tab" data-tab="sync" style="display:flex;flex-direction:column;gap:16px" <?= $activeTab === "sync" ? "" : "hidden" ?>>
 <section class="card pad" style="display:flex;flex-direction:column;gap:10px">
   <strong style="font-size:15px">ซิงก์รายชื่อผู้ใช้จาก RVC-ONE</strong>
   <p class="muted" style="font-size:12.5px;margin:0">
@@ -131,7 +151,7 @@ $loginHints = [
 
   <table class="data">
     <tr><td style="width:220px">Endpoint ที่ใช้</td><td><?= e($syncInfo['endpoint'] ?: '-') ?></td></tr>
-    <tr><td>Client secret</td><td><?= $syncInfo['secret_source'] ? 'ตั้งไว้แล้ว (จาก ' . e($syncInfo['secret_source']) . ')' : '<span class="pill warn">ยังไม่ได้ตั้ง</span>' ?></td></tr>
+    <tr><td>Client secret</td><td><?= $syncInfo['secret_source'] ? 'ตั้งไว้แล้ว (จาก ' . e($syncInfo['secret_source']) . ')' : '<span class="pill warn">ยังไม่ได้ตั้ง</span>' ?> · <a href="index.php?r=sso&amp;tab=secret" data-tab-link="secret">ตั้งค่า</a></td></tr>
     <tr><td>since ถัดไป</td><td><?= e($syncInfo['since'] ?: '— (รอบถัดไปดึงทั้งหมด)') ?></td></tr>
     <tr><td>ซิงก์สำเร็จล่าสุด</td><td>
       <?php if ($syncInfo['last_at']): $lr = $syncInfo['last_result'] ?? []; ?>
@@ -167,3 +187,17 @@ $loginHints = [
     <div><button class="btn" type="submit">บันทึกการตั้งค่าซิงก์</button></div>
   </form>
 </section>
+</div>
+
+<style>.sso-tab[hidden]{display:none!important}</style>
+<script>
+document.querySelectorAll("[data-tab-link]").forEach(function (a) {
+  a.addEventListener("click", function (ev) {
+    ev.preventDefault();
+    var t = a.dataset.tabLink;
+    document.querySelectorAll(".chip[data-tab-link]").forEach(function (x) { x.classList.toggle("on", x.dataset.tabLink === t); });
+    document.querySelectorAll(".sso-tab").forEach(function (p) { p.hidden = p.dataset.tab !== t; });
+    history.replaceState(null, "", a.href);
+  });
+});
+</script>
