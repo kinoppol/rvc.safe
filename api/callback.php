@@ -35,6 +35,10 @@ if (!installation_complete()) {
 
 [$cfg, $pdo] = boot_app();
 
+if (!Auth::ssoAllowed()) {
+    sso_deny(403, 'ผู้ดูแลระบบปิดการลงชื่อเข้าใช้ผ่าน ONE-RVC ไว้ กรุณาเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน');
+}
+
 // ผู้ใช้กดไม่อนุญาตที่หน้า ONE-RVC — จบ flow อย่างสุภาพ กลับไปหน้าเข้าสู่ระบบ
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     if (isset($_GET['error'])) {

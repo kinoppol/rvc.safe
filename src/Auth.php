@@ -17,12 +17,45 @@ final class Auth
         self::$pdo = $pdo;
     }
 
-    public static function attempt(string $username, string $password): bool
+    /** วิธีลงชื่อเข้าใช้ที่ผู้ดูแลเลือกได้ (settings.login_methods) */
+    public const LOGIN_METHODS = [
+        'both'     => 'รหัสผ่าน และ SSO (RVC-ONE)',
+        'password' => 'เฉพาะรหัสผ่าน',
+        'sso'      => 'เฉพาะ SSO (RVC-ONE)',
+    ];
+
+    /**
+     * วิธีลงชื่อเข้าใช้ที่มีผลจริง — ถ้าเลือก "เฉพาะ SSO" แต่ SSO ยังตั้งค่าไม่ครบ จะถอยกลับเป็น "both"
+     * กันทุกคนเข้าระบบไม่ได้ (ในโหมด sso ผู้ดูแลยังเข้าด้วยรหัสผ่านผ่านลิงก์สำรองได้เสมอ)
+     */
+    public static function loginMode(): string
+    {
+        $m = (string)get_setting('login_methods', 'both');
+        if (!isset(self::LOGIN_METHODS[$m])) { $m = 'both'; }
+        if ($m === 'sso' && !Sso::enabled()) { $m = 'both'; }
+        return $m;
+    }
+
+    public static function passwordAllowed(): bool
+    {
+        return self::loginMode() !== 'sso';
+    }
+
+    public static function ssoAllowed(): bool
+    {
+        return self::loginMode() !== 'password' && Sso::enabled();
+    }
+
+    /** @param string[]|null $onlyRoles จำกัดบทบาทที่ล็อกอินด้วยรหัสผ่านได้ (เช่น ['admin'] ในโหมดเฉพาะ SSO) */
+    public static function attempt(string $username, string $password, ?array $onlyRoles = null): bool
     {
         $st = self::$pdo->prepare('SELECT * FROM users WHERE username = ? AND is_active = 1 LIMIT 1');
         $st->execute([$username]);
         $u = $st->fetch();
         if (!$u || !password_verify($password, $u['password_hash'])) {
+            return false;
+        }
+        if ($onlyRoles !== null && !in_array($u['role'], $onlyRoles, true)) {
             return false;
         }
         session_regenerate_id(true);

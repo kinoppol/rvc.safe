@@ -16,15 +16,22 @@ $method = $_SERVER['REQUEST_METHOD'];
 /* ---------------- Auth ---------------- */
 if ($r === 'login') {
     if (Auth::check()) { redirect('index.php?r=dashboard'); }
+    // โหมด "เฉพาะ SSO": ฟอร์มรหัสผ่านเปิดเฉพาะผ่านลิงก์สำรองของผู้ดูแล (?admin=1) และรับเฉพาะบัญชี role=admin
+    $adminFallback = !Auth::passwordAllowed() && (($_GET['admin'] ?? '') === '1' || ($_POST['admin'] ?? '') === '1');
     if ($method === 'POST') {
         csrf_verify();
-        if (Auth::attempt(trim($_POST['username'] ?? ''), (string)($_POST['password'] ?? ''))) {
-            activity_log($pdo, 'เข้าสู่ระบบ');
+        if (!Auth::passwordAllowed() && !$adminFallback) {
+            flash('ระบบนี้เปิดให้ลงชื่อเข้าใช้ผ่าน RVC-ONE เท่านั้น', 'err');
+            redirect('index.php?r=login');
+        }
+        $onlyRoles = Auth::passwordAllowed() ? null : ['admin'];
+        if (Auth::attempt(trim($_POST['username'] ?? ''), (string)($_POST['password'] ?? ''), $onlyRoles)) {
+            activity_log($pdo, $onlyRoles ? 'เข้าสู่ระบบด้วยรหัสผ่าน (ช่องทางสำรองของผู้ดูแล)' : 'เข้าสู่ระบบ');
             redirect('index.php?r=dashboard');
         }
-        flash('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'err');
+        flash($onlyRoles ? 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีนี้ไม่ใช่ผู้ดูแลระบบ' : 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'err');
     }
-    render('login', [], 'เข้าสู่ระบบ');
+    render('login', ['adminFallback' => $adminFallback], 'เข้าสู่ระบบ');
     exit;
 }
 
@@ -32,6 +39,10 @@ if ($r === 'sso_login') {
     if (Auth::check()) { redirect('index.php?r=dashboard'); }
     if (!Sso::enabled()) {
         flash('ยังไม่ได้ตั้งค่าระบบเข้าสู่ระบบผ่าน ONE-RVC', 'err');
+        redirect('index.php?r=login');
+    }
+    if (!Auth::ssoAllowed()) {
+        flash('ผู้ดูแลระบบปิดการลงชื่อเข้าใช้ผ่าน RVC-ONE ไว้', 'err');
         redirect('index.php?r=login');
     }
     $state = bin2hex(random_bytes(16));
@@ -621,6 +632,38 @@ if ($r === 'rms') {
 if ($r === 'sso') {
     Auth::requireRole('admin');
 
+    if ($method === 'POST' && ($_POST['action'] ?? '') === 'save_login_methods') {
+        csrf_verify();
+        $mode = (string)($_POST['login_methods'] ?? '');
+        if (!isset(Auth::LOGIN_METHODS[$mode])) {
+            flash('วิธีลงชื่อเข้าใช้ไม่ถูกต้อง', 'err');
+        } elseif ($mode === 'sso' && !Sso::enabled()) {
+            flash('ยังเลือก "เฉพาะ SSO" ไม่ได้ เพราะการเชื่อมต่อ ONE-RVC ยังตั้งค่าไม่ครบ', 'err');
+        } else {
+            set_setting('login_methods', $mode);
+            activity_log($pdo, 'ตั้งวิธีลงชื่อเข้าใช้: ' . Auth::LOGIN_METHODS[$mode]);
+            flash('บันทึกวิธีลงชื่อเข้าใช้เรียบร้อย: ' . Auth::LOGIN_METHODS[$mode], 'ok');
+        }
+        redirect('index.php?r=sso');
+    }
+
+    if ($method === 'POST' && ($_POST['action'] ?? '') === 'save_secret') {
+        csrf_verify();
+        $secret = trim((string)($_POST['oa_client_secret'] ?? ''));
+        if (!empty($_POST['clear_secret'])) {
+            set_setting('oa_client_secret', '');
+            activity_log($pdo, 'ลบ client secret ของ RVC-ONE ที่บันทึกในระบบ');
+            flash('ลบ client secret เรียบร้อย', 'ok');
+        } elseif ($secret === '') {
+            flash('กรุณากรอก client secret', 'err');
+        } else {
+            set_setting('oa_client_secret', $secret);
+            activity_log($pdo, 'บันทึก client secret ของ RVC-ONE'); // ห้ามใส่ค่า secret ลง log
+            flash('บันทึก client secret เรียบร้อย', 'ok');
+        }
+        redirect('index.php?r=sso');
+    }
+
     if ($method === 'POST' && in_array($_POST['action'] ?? '', ['save_sync', 'sync_now', 'sync_full'], true)) {
         csrf_verify();
         $action = $_POST['action'];
@@ -631,12 +674,6 @@ if ($r === 'sso') {
                 redirect('index.php?r=sso');
             }
             set_setting('oa_sync_endpoint', $endpoint);
-            $secret = (string)($_POST['oa_client_secret'] ?? '');
-            if (!empty($_POST['clear_secret'])) {
-                set_setting('oa_client_secret', '');
-            } elseif (trim($secret) !== '') {
-                set_setting('oa_client_secret', trim($secret));
-            }
             activity_log($pdo, 'อัปเดตการตั้งค่าซิงก์ผู้ใช้จาก RVC-ONE');
             flash('บันทึกการตั้งค่าซิงก์ผู้ใช้เรียบร้อย', 'ok');
         } else {
@@ -699,7 +736,11 @@ if ($r === 'sso') {
         'last_error'        => get_setting('oa_sync_last_error', ''),
         'linked'            => (int)$pdo->query('SELECT COUNT(*) FROM users WHERE sso_user_id IS NOT NULL')->fetchColumn(),
     ];
-    render('sso_settings', compact('ssoDefaults', 'ssoOverride', 'ssoEffective', 'ssoStartUrl', 'syncInfo'), 'ตั้งค่า SSO (ONE-RVC)');
+    $loginMode = (string)get_setting('login_methods', 'both');
+    if (!isset(Auth::LOGIN_METHODS[$loginMode])) { $loginMode = 'both'; }
+    $loginModeEffective = Auth::loginMode();
+    $ssoReady = Sso::enabled();
+    render('sso_settings', compact('ssoDefaults', 'ssoOverride', 'ssoEffective', 'ssoStartUrl', 'syncInfo', 'loginMode', 'loginModeEffective', 'ssoReady'), 'ตั้งค่า SSO (ONE-RVC)');
     exit;
 }
 

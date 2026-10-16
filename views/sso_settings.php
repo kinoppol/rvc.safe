@@ -1,6 +1,60 @@
 <?php
-/** @var array $ssoDefaults @var array $ssoOverride @var array $ssoEffective @var string $ssoStartUrl @var array $syncInfo */
+/** @var array $ssoDefaults @var array $ssoOverride @var array $ssoEffective @var string $ssoStartUrl @var array $syncInfo
+ *  @var string $loginMode @var string $loginModeEffective @var bool $ssoReady */
+$loginHints = [
+    'both'     => 'แสดงทั้งปุ่ม RVC-ONE และฟอร์มชื่อผู้ใช้/รหัสผ่านที่หน้าเข้าสู่ระบบ',
+    'password' => 'ซ่อนปุ่ม RVC-ONE และปฏิเสธการเข้าผ่าน SSO ทั้งหมด (รวมถึงไทล์จากหน้า Workspace)',
+    'sso'      => 'ผู้ใช้ทั่วไปเข้าได้ผ่าน RVC-ONE เท่านั้น — หน้าเข้าสู่ระบบจะมีลิงก์ "ผู้ดูแลระบบ: ลงชื่อเข้าใช้ด้วยรหัสผ่าน" ไว้ใช้กรณี RVC-ONE ล่ม (รับเฉพาะบัญชีบทบาทผู้ดูแลระบบ)',
+];
 ?>
+<section class="card pad" style="display:flex;flex-direction:column;gap:10px">
+  <strong style="font-size:15px">วิธีลงชื่อเข้าใช้ระบบ</strong>
+  <form method="post" action="index.php?r=sso" style="display:flex;flex-direction:column;gap:10px">
+    <?= csrf_field() ?><input type="hidden" name="action" value="save_login_methods">
+    <?php foreach (Auth::LOGIN_METHODS as $k => $label): $disabled = $k === 'sso' && !$ssoReady; ?>
+      <label style="display:flex;gap:10px;align-items:flex-start;font-size:13.5px;<?= $disabled ? 'opacity:.55' : '' ?>">
+        <input type="radio" name="login_methods" value="<?= e($k) ?>" <?= $loginMode === $k ? 'checked' : '' ?> <?= $disabled ? 'disabled' : '' ?> style="margin-top:3px">
+        <span><strong><?= e($label) ?></strong><br><span class="muted" style="font-size:11.5px"><?= e($loginHints[$k]) ?></span></span>
+      </label>
+    <?php endforeach; ?>
+    <?php if (!$ssoReady): ?>
+      <span class="muted" style="font-size:11.5px">ตั้งค่าการเชื่อมต่อ ONE-RVC ด้านล่างให้ครบก่อน จึงจะเลือก “เฉพาะ SSO” ได้</span>
+    <?php endif; ?>
+    <?php if ($loginModeEffective !== $loginMode): ?>
+      <span class="pill warn" style="align-self:flex-start">ขณะนี้มีผลเป็น “<?= e(Auth::LOGIN_METHODS[$loginModeEffective]) ?>” เพราะ SSO ยังตั้งค่าไม่ครบ</span>
+    <?php endif; ?>
+    <div><button class="btn" type="submit">บันทึกวิธีลงชื่อเข้าใช้</button></div>
+  </form>
+</section>
+
+<section class="card pad" style="display:flex;flex-direction:column;gap:10px">
+  <strong style="font-size:15px">Client secret ของ RVC-ONE</strong>
+  <table class="data">
+    <tr><td style="width:220px">สถานะ</td><td><?= $syncInfo['secret_source'] ? '<span class="pill ok">ตั้งไว้แล้ว</span> (จาก ' . e($syncInfo['secret_source']) . ')' : '<span class="pill warn">ยังไม่ได้ตั้ง</span>' ?></td></tr>
+  </table>
+  <form method="post" action="index.php?r=sso" style="display:flex;flex-direction:column;gap:12px" autocomplete="off">
+    <?= csrf_field() ?><input type="hidden" name="action" value="save_secret">
+    <label class="field">
+      <span class="lbl">Client secret</span>
+      <span style="display:flex;gap:6px">
+        <input type="password" name="oa_client_secret" id="oa_client_secret" value="" autocomplete="new-password" style="flex:1"
+               placeholder="<?= $syncInfo['secret_source'] ? 'ตั้งไว้แล้ว — กรอกค่าใหม่เพื่อเปลี่ยน' : 'วาง client_secret ที่ได้จาก RVC-ONE' ?>">
+        <button class="btn sec" type="button" onclick="var i=document.getElementById('oa_client_secret');i.type=i.type==='password'?'text':'password';this.textContent=i.type==='password'?'แสดง':'ซ่อน'">แสดง</button>
+      </span>
+      <span class="muted" style="font-size:11.5px">
+        ใช้คู่กับ Client ID สำหรับเรียก API ของ RVC-ONE จากฝั่งเซิร์ฟเวอร์ (เช่น User-sync) · ระบบไม่แสดงค่าที่บันทึกไว้ ·
+        ถ้าตั้ง env <code>OA_CLIENT_SECRET</code> หรือ <code>user_sync.client_secret</code> ใน config/config.php ไว้ จะใช้ค่านั้นก่อนค่าในหน้านี้
+      </span>
+    </label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" type="submit">บันทึก client secret</button>
+      <?php if (get_setting('oa_client_secret', '') !== ''): ?>
+        <button class="btn sec" type="submit" name="clear_secret" value="1" onclick="return confirm('ลบ client secret ที่บันทึกในหน้านี้?')">ลบค่าที่บันทึกไว้</button>
+      <?php endif; ?>
+    </div>
+  </form>
+</section>
+
 <section class="card pad" style="display:flex;flex-direction:column;gap:10px">
   <strong style="font-size:15px">ตั้งค่าการเชื่อมต่อ ONE-RVC (SSO)</strong>
   <p class="muted" style="font-size:12.5px;margin:0">
@@ -110,14 +164,6 @@
       <input type="text" name="oa_sync_endpoint" value="<?= e($syncInfo['endpoint_override']) ?>" placeholder="<?= e($syncInfo['endpoint_default']) ?>">
       <span class="muted" style="font-size:11.5px">เว้นว่างเพื่อใช้ค่าเริ่มต้น — ใส่ Private IP ได้เช่นเดียวกับ Verify endpoint</span>
     </label>
-    <label class="field">
-      <span class="lbl">Client secret</span>
-      <input type="password" name="oa_client_secret" value="" autocomplete="new-password" placeholder="<?= $syncInfo['secret_source'] ? 'ตั้งไว้แล้ว — เว้นว่างเพื่อคงค่าเดิม' : 'วาง client_secret ที่ได้จาก RVC-ONE' ?>">
-      <span class="muted" style="font-size:11.5px">
-        ระบบไม่แสดงค่าที่บันทึกไว้ · ถ้าตั้ง env <code>OA_CLIENT_SECRET</code> หรือ <code>user_sync.client_secret</code> ใน config/config.php ไว้ จะใช้ค่านั้นก่อน
-      </span>
-    </label>
-    <label style="display:flex;gap:6px;align-items:center;font-size:12.5px"><input type="checkbox" name="clear_secret" value="1"> ลบ client secret ที่บันทึกในหน้านี้</label>
     <div><button class="btn" type="submit">บันทึกการตั้งค่าซิงก์</button></div>
   </form>
 </section>
