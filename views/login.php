@@ -54,7 +54,4 @@
     <button class="btn <?= $showSso ? 'sec' : '' ?>" style="width:100%"><?= $adminFallback ? 'เข้าสู่ระบบ (ผู้ดูแลระบบ)' : 'เข้าสู่ระบบด้วยบัญชีในระบบนี้' ?></button>
   </form>
   <?php endif; ?>
-  <p class="muted" style="font-size:11.5px;margin-top:16px;text-align:center">
-    ยังไม่ได้ติดตั้ง? <a href="install.php">เปิดตัวติดตั้ง</a>
-  </p>
 </div>
