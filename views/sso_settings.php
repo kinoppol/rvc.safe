@@ -29,7 +29,7 @@ $activeTab = isset($ssoTabs[$_GET["tab"] ?? ""]) ? $_GET["tab"] : "login";
       </label>
     <?php endforeach; ?>
     <?php if (!$ssoReady): ?>
-      <span class="muted" style="font-size:11.5px">ตั้งค่าการเชื่อมต่อ ONE-RVC ด้านล่างให้ครบก่อน จึงจะเลือก “เฉพาะ SSO” ได้</span>
+      <span class="muted" style="font-size:11.5px">ตั้งค่าการเชื่อมต่อ ONE-RVC และ Client secret ให้ครบก่อน จึงจะเลือก “เฉพาะ SSO” ได้</span>
     <?php endif; ?>
     <?php if ($loginModeEffective !== $loginMode): ?>
       <span class="pill warn" style="align-self:flex-start">ขณะนี้มีผลเป็น “<?= e(Auth::LOGIN_METHODS[$loginModeEffective]) ?>” เพราะ SSO ยังตั้งค่าไม่ครบ</span>
@@ -56,7 +56,8 @@ $activeTab = isset($ssoTabs[$_GET["tab"] ?? ""]) ? $_GET["tab"] : "login";
         <button class="btn sec" type="button" onclick="var i=document.getElementById('oa_client_secret');i.type=i.type==='password'?'text':'password';this.textContent=i.type==='password'?'แสดง':'ซ่อน'">แสดง</button>
       </span>
       <span class="muted" style="font-size:11.5px">
-        ใช้คู่กับ Client ID สำหรับเรียก API ของ RVC-ONE จากฝั่งเซิร์ฟเวอร์ (เช่น User-sync) · ระบบไม่แสดงค่าที่บันทึกไว้ ·
+        <strong>จำเป็นสำหรับการลงชื่อเข้าใช้ผ่าน SSO</strong> (ใช้ยืนยันตัวแอปตอนตรวจสอบโทเคนกับ RVC-ONE) และการซิงก์ผู้ใช้ —
+        ดูค่าได้ที่แท็บ SSO ของแอปนี้ในหน้าผู้ดูแล RVC-ONE · ระบบไม่แสดงค่าที่บันทึกไว้ ·
         ถ้าตั้ง env <code>OA_CLIENT_SECRET</code> หรือ <code>user_sync.client_secret</code> ใน config/config.php ไว้ จะใช้ค่านั้นก่อนค่าในหน้านี้
       </span>
     </label>

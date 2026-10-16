@@ -7,8 +7,9 @@ declare(strict_types=1);
  *   1. redirect ผู้ใช้ไป authorize_endpoint พร้อม client_id/redirect_uri/state
  *   2. ONE-RVC ให้ผู้ใช้ล็อกอิน (รหัสผ่าน + OTP) แล้ว POST token_id/token_key/state กลับมาที่ redirect_uri
  *   3. เว็บฝั่งนี้ verify token_id/token_key กับ verify_endpoint (ฝั่งเซิร์ฟเวอร์เท่านั้น) ก่อนเชื่อถือ
+ *      โดยยืนยันตัวแอปด้วย client_id + client_secret (ใช้ secret ชุดเดียวกับ User-sync — ดู OaSync::config())
  *
- * ⚠️ ห้าม trust token_id/token_key จากฝั่ง client และห้ามเขียนค่าทั้งสองนี้ลง log ใด ๆ
+ * ⚠️ ห้าม trust token_id/token_key จากฝั่ง client และห้ามเขียน token / client_secret ลง log ใด ๆ
  */
 final class Sso
 {
@@ -36,7 +37,8 @@ final class Sso
     public static function enabled(): bool
     {
         $c = self::config();
-        return !empty($c['authorize_endpoint']) && !empty($c['client_id']) && !empty($c['redirect_uri']);
+        return !empty($c['authorize_endpoint']) && !empty($c['client_id']) && !empty($c['redirect_uri'])
+            && OaSync::config()['client_secret'] !== ''; // verify_token ต้องใช้ client_secret
     }
 
     /** สร้าง URL สำหรับเริ่ม flow ที่ authorize_endpoint ของ ONE-RVC */
@@ -67,10 +69,23 @@ final class Sso
             throw new RuntimeException('ยังไม่ได้ตั้งค่าระบบยืนยันตัวตน ONE-RVC');
         }
 
+        // ONE-RVC บังคับให้แอปยืนยันตัวเองด้วย client_id + client_secret ก่อน verify token (ไม่งั้นตอบ invalid_client)
+        // ส่งทั้ง HTTP Basic และใน POST body — เผื่อเว็บเซิร์ฟเวอร์ฝั่ง ONE-RVC ตัด Authorization header ทิ้ง
+        $clientId = (string)($c['client_id'] ?? '');
+        $secret   = OaSync::config()['client_secret'];
+        if ($clientId === '' || $secret === '') {
+            throw new RuntimeException('ยังไม่ได้ตั้งค่า Client secret ของ RVC-ONE — ผู้ดูแลระบบต้องกรอกที่หน้า "ตั้งค่า SSO" แท็บ Client secret');
+        }
+
         $ch = curl_init($endpoint);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => http_build_query(['token_id' => $tokenId, 'token_key' => $tokenKey]),
+            CURLOPT_POSTFIELDS     => http_build_query([
+                'token_id' => $tokenId, 'token_key' => $tokenKey,
+                'client_id' => $clientId, 'client_secret' => $secret,
+            ]),
+            CURLOPT_HTTPAUTH       => CURLAUTH_BASIC,
+            CURLOPT_USERPWD        => $clientId . ':' . $secret,
             CURLOPT_HTTPHEADER     => ['Content-Type: application/x-www-form-urlencoded'],
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 10,
@@ -92,7 +107,13 @@ final class Sso
             throw new RuntimeException('ข้อมูลตอบกลับจากระบบยืนยันตัวตนไม่ถูกต้อง');
         }
         if (empty($data['valid'])) {
-            throw new RuntimeException((string)($data['error'] ?? 'โทเคนไม่ถูกต้องหรือหมดอายุ'));
+            $error = (string)($data['error'] ?? '');
+            throw new RuntimeException(match ($error) {
+                'invalid_client'                 => 'ระบบ RVC-ONE ไม่ยอมรับ Client ID / Client secret ของแอปนี้ (ค่าไม่ถูกต้องหรือแอปถูกปิดใช้งาน) — แจ้งผู้ดูแลระบบให้ตรวจสอบที่หน้า "ตั้งค่า SSO"',
+                'token not issued to this client' => 'โทเคนนี้ไม่ได้ออกให้แอปนี้ (Client ID ไม่ตรงกับที่ใช้ตอนลงชื่อเข้าใช้)',
+                ''                               => 'โทเคนไม่ถูกต้องหรือหมดอายุ',
+                default                          => $error,
+            });
         }
         return $data;
     }
